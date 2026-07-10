@@ -9,15 +9,14 @@ const STORAGE_KEYS = {
   BALANCE: 'zannypay:balance',
   TXNS: 'zannypay:transactions',
   ONBOARDED: 'zannypay:onboarded',
-  // Elite Module Additions (v2) — Savings & Credit
   SAVINGS_GOALS: 'zannypay:savingsGoals',
   LOAN: 'zannypay:activeLoan',
 };
 
-const SAVINGS_APY = 0.15; // 15% annualized, purely illustrative for in-app projections
+const SAVINGS_APY = 0.15; // 15% annualized
 const LOAN_INTEREST_RATE = 0.05; // 5% flat fee per loan term
 
-const STARTING_BALANCE = 0; // Aligned with server-side instantiation
+const STARTING_BALANCE = 0;
 
 export function WalletProvider({ children }) {
   const [loading, setLoading] = useState(true);
@@ -28,30 +27,37 @@ export function WalletProvider({ children }) {
   const [transactions, setTransactions] = useState([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // Elite Module Additions (v2) — Savings & Credit state
   const [savingsGoals, setSavingsGoals] = useState([]);
   const [loan, setLoan] = useState(null);
 
-  // Synchronize local state with true backend state
   const syncWallet = useCallback(async () => {
     try {
       const data = await apiGet('/user/me');
       console.log('[Sync Engine] Received true payload:', data);
 
       if (data && data.user) {
-        // 1. Process nested wallet balance object & convert DB string value to valid JS Number
         const walletBalance = data.user.wallet?.balance;
         if (walletBalance !== undefined) {
           const processedBalance = Number(walletBalance) || 0;
           setBalance(processedBalance);
           await saveJSON(STORAGE_KEYS.BALANCE, processedBalance);
         }
-        
-        // 2. Extract database transactions history array
+
         const remoteTxns = data.user.transactions || data.transactions;
         if (remoteTxns) {
           setTransactions(remoteTxns);
           await saveJSON(STORAGE_KEYS.TXNS, remoteTxns);
+        }
+
+        // Auto-sync active savings & loans if the backend payload includes them
+        if (data.user.savingsGoals) {
+          setSavingsGoals(data.user.savingsGoals);
+          await saveJSON(STORAGE_KEYS.SAVINGS_GOALS, data.user.savingsGoals);
+        }
+        if (data.user.loans) {
+          const activeLoan = data.user.loans.find(l => !l.repaid) || null;
+          setLoan(activeLoan);
+          await saveJSON(STORAGE_KEYS.LOAN, activeLoan);
         }
       }
     } catch (error) {
@@ -144,6 +150,8 @@ export function WalletProvider({ children }) {
     setUser(null);
     setBalance(0);
     setTransactions([]);
+    setSavingsGoals([]);
+    setLoan(null);
     await clearToken();
   }, []);
 
@@ -163,15 +171,12 @@ export function WalletProvider({ children }) {
     });
 
     setBalance((prev) => {
-      // UPGRADE: Only update the balance immediately if it is NOT pending.
-      // This prevents the balance jumping up and then immediately reverting on sync.
       if (txn.status === 'pending') return prev;
-      
       const updated = txn.type === 'credit' ? prev + amt : prev - amt;
       saveJSON(STORAGE_KEYS.BALANCE, updated);
       return updated;
     });
-    
+
     return entry;
   }, []);
 
@@ -181,11 +186,7 @@ export function WalletProvider({ children }) {
       if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
       if (amt > balance) return { ok: false, error: 'Insufficient balance.' };
 
-      const data = await apiPost(
-        '/transactions/transfer',
-        { recipientAccount, amount: amt, pin },
-        { type: 'transfer', amount: amt, account: recipientAccount }
-      );
+      const data = await apiPost('/transactions/transfer', { recipientAccount, amount: amt, pin });
 
       const txn = await addTransactionOptimistically({
         type: 'debit',
@@ -211,11 +212,7 @@ export function WalletProvider({ children }) {
       if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
       if (amt > balance) return { ok: false, error: 'Insufficient balance.' };
 
-      const data = await apiPost(
-        '/transactions/bills',
-        { billerName, category, amount: amt, reference, pin },
-        category === 'Airtime' ? { type: 'airtime', amount: amt } : null
-      );
+      const data = await apiPost('/transactions/bills', { billerName, category, amount: amt, reference, pin });
 
       const txn = await addTransactionOptimistically({
         type: 'debit',
@@ -256,23 +253,13 @@ export function WalletProvider({ children }) {
         reference: data.reference || data.transactionId || data.id
       }, amt);
 
-      // Instantly sync background records
       syncWallet();
-
-      // Return authorization URL back up so the UI layer can open it cleanly
-      return {
-        ok: true,
-        txn,
-        authorizationUrl: data.authorizationUrl
-      };
+      return { ok: true, txn, authorizationUrl: data.authorizationUrl };
     } catch (error) {
       return { ok: false, error: error.message || 'Wallet funding failed.' };
     }
   }, [addTransactionOptimistically, syncWallet]);
 
-  // Invoices are non-monetary (they don't move wallet funds), so they're
-  // logged locally for history/analytics without touching balance or the
-  // backend transactions endpoint.
   const recordInvoice = useCallback(async ({ clientName, amount, description }) => {
     const currentIsoString = new Date().toISOString();
     const entry = {
@@ -295,103 +282,88 @@ export function WalletProvider({ children }) {
   }, []);
 
   // ==========================================
-  // Elite Module Additions (v2) — Savings & Goals (Cashbox)
+  // Elite Module Additions (v2) — Savings & Goals LIVE
   // ==========================================
   const createSavingsGoal = useCallback(async ({ name, target }) => {
-    const targetAmt = Number(target) || 0;
-    if (!name || targetAmt <= 0) return { ok: false, error: 'Enter a name and a valid target amount.' };
+    try {
+      const targetAmt = Number(target) || 0;
+      if (!name || targetAmt <= 0) return { ok: false, error: 'Enter a name and a valid target amount.' };
 
-    const goal = {
-      id: Date.now().toString(),
-      name,
-      target: targetAmt,
-      saved: 0,
-      createdAt: new Date().toISOString(),
-    };
+      const data = await apiPost('/savings/goal', { name, target: targetAmt });
 
-    setSavingsGoals((prev) => {
-      const updated = [goal, ...prev];
-      saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
-      return updated;
-    });
+      setSavingsGoals((prev) => {
+        const updated = [data.goal, ...prev];
+        saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
+        return updated;
+      });
 
-    return { ok: true, goal };
+      return { ok: true, goal: data.goal };
+    } catch (error) {
+      return { ok: false, error: error.message || 'Failed to create goal.' };
+    }
   }, []);
 
   const depositToSavings = useCallback(async (goalId, amount) => {
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
-    if (amt > balance) return { ok: false, error: 'Insufficient wallet balance.' };
+    try {
+      const amt = Number(amount);
+      if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
+      if (amt > balance) return { ok: false, error: 'Insufficient wallet balance.' };
 
-    setBalance((prev) => {
-      const updated = prev - amt;
-      saveJSON(STORAGE_KEYS.BALANCE, updated);
-      return updated;
-    });
+      const data = await apiPost('/savings/deposit', { goalId, amount: amt });
 
-    let updatedGoal = null;
-    setSavingsGoals((prev) => {
-      const updated = prev.map((g) => {
-        if (g.id !== goalId) return g;
-        updatedGoal = { ...g, saved: (g.saved || 0) + amt };
-        return updatedGoal;
+      setSavingsGoals((prev) => {
+        const updated = prev.map((g) => (g.id === goalId ? data.goal : g));
+        saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
+        return updated;
       });
-      saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
-      return updated;
-    });
 
-    await addTransactionOptimistically({
-      type: 'debit',
-      category: 'Savings',
-      title: `Saved towards ${updatedGoal?.name || 'a goal'}`,
-      subtitle: 'Moved to Cashbox',
-      amount: amt,
-      status: 'success',
-    }, 0); // amt already deducted above; pass 0 so it doesn't double-debit balance
+      await addTransactionOptimistically({
+        type: 'debit',
+        category: 'Savings',
+        title: `Saved towards ${data.goal.name}`,
+        subtitle: 'Moved to Cashbox',
+        amount: amt,
+        status: 'success',
+      }, amt); 
 
-    return { ok: true, goal: updatedGoal };
-  }, [balance, addTransactionOptimistically]);
+      syncWallet();
+      return { ok: true, goal: data.goal };
+    } catch (error) {
+      return { ok: false, error: error.message || 'Deposit failed.' };
+    }
+  }, [balance, addTransactionOptimistically, syncWallet]);
 
   const withdrawFromSavings = useCallback(async (goalId, amount) => {
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
+    try {
+      const amt = Number(amount);
+      if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
 
-    const target = savingsGoals.find((g) => g.id === goalId);
-    if (!target || amt > (target.saved || 0)) {
-      return { ok: false, error: 'Insufficient savings balance for this goal.' };
-    }
+      const data = await apiPost('/savings/withdraw', { goalId, amount: amt });
 
-    let updatedGoal = null;
-    setSavingsGoals((prev) => {
-      const updated = prev.map((g) => {
-        if (g.id !== goalId) return g;
-        updatedGoal = { ...g, saved: (g.saved || 0) - amt };
-        return updatedGoal;
+      setSavingsGoals((prev) => {
+        const updated = prev.map((g) => (g.id === goalId ? data.goal : g));
+        saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
+        return updated;
       });
-      saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
-      return updated;
-    });
 
-    setBalance((prev) => {
-      const updated = prev + amt;
-      saveJSON(STORAGE_KEYS.BALANCE, updated);
-      return updated;
-    });
+      await addTransactionOptimistically({
+        type: 'credit',
+        category: 'Savings',
+        title: `Withdrew from ${data.goal.name}`,
+        subtitle: 'Returned to Wallet',
+        amount: amt,
+        status: 'success',
+      }, amt);
 
-    await addTransactionOptimistically({
-      type: 'credit',
-      category: 'Savings',
-      title: `Withdrew from ${updatedGoal?.name || 'Cashbox'}`,
-      subtitle: 'Returned to Wallet',
-      amount: amt,
-      status: 'success',
-    }, 0);
-
-    return { ok: true, goal: updatedGoal };
-  }, [savingsGoals, addTransactionOptimistically]);
+      syncWallet();
+      return { ok: true, goal: data.goal };
+    } catch (error) {
+      return { ok: false, error: error.message || 'Withdrawal failed.' };
+    }
+  }, [addTransactionOptimistically, syncWallet]);
 
   // ==========================================
-  // Elite Module Additions (v2) — Flexi Credit / Loans
+  // Elite Module Additions (v2) — Flexi Credit / Loans LIVE
   // ==========================================
   const totalCredits = useMemo(() => {
     return (transactions || [])
@@ -400,94 +372,70 @@ export function WalletProvider({ children }) {
   }, [transactions]);
 
   const creditLimit = useMemo(() => {
-    // Illustrative on-device credit scoring: baseline + a slice of historical inflow, capped.
     const computed = 50000 + totalCredits * 0.15;
     return Math.min(Math.round(computed / 1000) * 1000, 1000000);
   }, [totalCredits]);
 
   const requestLoan = useCallback(async ({ amount, termDays }) => {
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
-    if (loan && !loan.repaid) return { ok: false, error: 'You already have an active loan. Repay it first.' };
-    if (amt > creditLimit) return { ok: false, error: `Amount exceeds your credit limit of ${creditLimit}.` };
+    try {
+      const amt = Number(amount);
+      if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
+      if (loan && !loan.repaid) return { ok: false, error: 'You already have an active loan. Repay it first.' };
+      if (amt > creditLimit) return { ok: false, error: `Amount exceeds your credit limit of ${creditLimit}.` };
 
-    const fee = Math.round(amt * LOAN_INTEREST_RATE);
-    const totalOwed = amt + fee;
-    const dueDate = new Date(Date.now() + (Number(termDays) || 30) * 24 * 60 * 60 * 1000).toISOString();
+      const data = await apiPost('/loans/request', { amount: amt, termDays: Number(termDays) || 30 });
 
-    const newLoan = {
-      id: Date.now().toString(),
-      principal: amt,
-      fee,
-      totalOwed,
-      amountRepaid: 0,
-      termDays: Number(termDays) || 30,
-      issuedAt: new Date().toISOString(),
-      dueDate,
-      repaid: false,
-    };
+      setLoan(data.loan);
+      await saveJSON(STORAGE_KEYS.LOAN, data.loan);
 
-    setLoan(newLoan);
-    await saveJSON(STORAGE_KEYS.LOAN, newLoan);
+      await addTransactionOptimistically({
+        type: 'credit',
+        category: 'Flexi Credit',
+        title: 'Loan Disbursed',
+        subtitle: `${data.loan.termDays}-day term`,
+        amount: amt,
+        status: 'success',
+      }, amt);
 
-    setBalance((prev) => {
-      const updated = prev + amt;
-      saveJSON(STORAGE_KEYS.BALANCE, updated);
-      return updated;
-    });
-
-    await addTransactionOptimistically({
-      type: 'credit',
-      category: 'Flexi Credit',
-      title: 'Loan Disbursed',
-      subtitle: `${newLoan.termDays}-day term · Repay ${totalOwed}`,
-      amount: amt,
-      status: 'success',
-    }, 0);
-
-    return { ok: true, loan: newLoan };
-  }, [loan, creditLimit, addTransactionOptimistically]);
+      syncWallet();
+      return { ok: true, loan: data.loan };
+    } catch (error) {
+      return { ok: false, error: error.message || 'Loan request failed.' };
+    }
+  }, [loan, creditLimit, addTransactionOptimistically, syncWallet]);
 
   const repayLoan = useCallback(async (amount) => {
-    const amt = Number(amount);
-    if (!loan || loan.repaid) return { ok: false, error: 'No active loan to repay.' };
-    if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
-    if (amt > balance) return { ok: false, error: 'Insufficient wallet balance.' };
+    try {
+      const amt = Number(amount);
+      if (!loan || loan.repaid) return { ok: false, error: 'No active loan to repay.' };
+      if (!amt || amt <= 0) return { ok: false, error: 'Enter a valid amount.' };
+      if (amt > balance) return { ok: false, error: 'Insufficient wallet balance.' };
 
-    const remaining = loan.totalOwed - loan.amountRepaid;
-    const payment = Math.min(amt, remaining);
-    const updatedLoan = {
-      ...loan,
-      amountRepaid: loan.amountRepaid + payment,
-      repaid: loan.amountRepaid + payment >= loan.totalOwed,
-    };
+      const data = await apiPost('/loans/repay', { amount: amt });
 
-    setLoan(updatedLoan);
-    await saveJSON(STORAGE_KEYS.LOAN, updatedLoan);
+      setLoan(data.loan);
+      await saveJSON(STORAGE_KEYS.LOAN, data.loan);
 
-    setBalance((prev) => {
-      const updated = prev - payment;
-      saveJSON(STORAGE_KEYS.BALANCE, updated);
-      return updated;
-    });
+      await addTransactionOptimistically({
+        type: 'debit',
+        category: 'Flexi Credit',
+        title: data.loan.repaid ? 'Loan Fully Repaid' : 'Loan Repayment',
+        subtitle: `Payment applied to balance`,
+        amount: amt, 
+        status: 'success',
+      }, amt);
 
-    await addTransactionOptimistically({
-      type: 'debit',
-      category: 'Flexi Credit',
-      title: updatedLoan.repaid ? 'Loan Fully Repaid' : 'Loan Repayment',
-      subtitle: `Balance owed: ${Math.max(updatedLoan.totalOwed - updatedLoan.amountRepaid, 0)}`,
-      amount: payment,
-      status: 'success',
-    }, 0);
-
-    return { ok: true, loan: updatedLoan };
-  }, [loan, balance, addTransactionOptimistically]);
+      syncWallet();
+      return { ok: true, loan: data.loan };
+    } catch (error) {
+      return { ok: false, error: error.message || 'Repayment failed.' };
+    }
+  }, [loan, balance, addTransactionOptimistically, syncWallet]);
 
   const value = {
     loading, onboarded, completeOnboarding, user, isAuthenticated,
     signup, login, logout, balance, transactions,
     transferMoney, payBill, fundWallet, syncWallet, recordInvoice,
-    // Elite Module Additions (v2)
     savingsGoals, createSavingsGoal, depositToSavings, withdrawFromSavings, savingsApy: SAVINGS_APY,
     loan, creditLimit, requestLoan, repayLoan,
   };
