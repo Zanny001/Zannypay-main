@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800', color: colors.textDark },
   subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textDark, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  keyBox: { backgroundColor: '#fff', borderRadius: 12, borderHorizontal: 1, borderColor: colors.border, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, borderWidth: 1, borderColor: colors.border },
+  keyBox: { backgroundColor: '#fff', borderRadius: 12, borderHorizontal: 1, borderColor: colors.border, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, borderWidth: 1 },
   keyText: { fontFamily: 'monospace', fontSize: 13, color: colors.textDark },
   refreshBtn: { backgroundColor: colors.primary, width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   terminalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

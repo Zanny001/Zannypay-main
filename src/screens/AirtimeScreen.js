@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import GradientButton from '../components/GradientButton';
@@ -17,6 +18,8 @@ export default function AirtimeScreen({ navigation }) {
       Alert.alert('Details Required', 'Please enter a phone number and select an amount.');
       return;
     }
+    
+    // TODO: Wire this up to the WalletContext and your Reloadly API backend!
     Alert.alert('Confirm Purchase', `Buy ₦${amount} ${activeTab} for ${phone}?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Pay Now', onPress: () => {
@@ -42,9 +45,9 @@ export default function AirtimeScreen({ navigation }) {
         {/* Tab Switcher */}
         <View style={[styles.tabContainer, { backgroundColor: theme.surface }]}>
           {['Airtime', 'Data Bundle'].map((tab) => (
-            <TouchableOpacity 
-              key={tab} 
-              style={[styles.tab, activeTab === tab && { backgroundColor: theme.surfaceAlt }]} 
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, activeTab === tab && { backgroundColor: theme.surfaceAlt }]}
               onPress={() => setActiveTab(tab)}
             >
               <Text style={[styles.tabText, { color: activeTab === tab ? theme.primary : theme.textMuted }]}>{tab}</Text>
@@ -80,10 +83,10 @@ export default function AirtimeScreen({ navigation }) {
         <Text style={[styles.sectionTitle, { color: theme.text }]}>Top-up Amount</Text>
         <View style={styles.grid}>
           {AMOUNTS.map((amt) => (
-            <TouchableOpacity 
-              key={amt} 
+            <TouchableOpacity
+              key={amt}
               style={[
-                styles.gridItem, 
+                styles.gridItem,
                 { backgroundColor: theme.surface, borderColor: amount === amt ? theme.primary : theme.border },
                 amount === amt && { backgroundColor: 'rgba(98, 54, 255, 0.1)' }
               ]}

@@ -40,7 +40,7 @@ export default function QRPayScreen({ navigation }) {
     );
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, [pulse]);
 
   const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
   const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.5] });

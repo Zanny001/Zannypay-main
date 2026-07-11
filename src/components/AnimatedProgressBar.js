@@ -15,7 +15,7 @@ export default function AnimatedProgressBar({ percentage = 0, color = colors.pri
       friction: 8,
       tension: 40,
     }).start();
-  }, [clamped]);
+  }, [anim, clamped]); // <-- FIXED: Added clamped dependency
 
   const width = anim.interpolate({
     inputRange: [0, 100],
@@ -34,3 +34,4 @@ const styles = StyleSheet.create({
   track: { width: '100%', overflow: 'hidden' },
   fill: { height: '100%' },
 });
+

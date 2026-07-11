@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { colors } from '../theme/colors';
@@ -75,10 +76,10 @@ export default function LoginScreen({ navigation }) {
           setLoading(false);
         }
       };
-      
+
       triggerLogin();
     }
-  }, [pin, phone, login]); 
+  }, [pin, phone, login]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -151,4 +152,3 @@ const styles = StyleSheet.create({
   key: { width: '30%', aspectRatio: 1.4, alignItems: 'center', justifyContent: 'center' },
   keyText: { fontSize: 26, fontWeight: '600', color: colors.textDark },
 });
-
