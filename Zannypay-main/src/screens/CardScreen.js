@@ -1,22 +1,69 @@
+
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Switch, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, Switch, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { colors } from '../theme/colors';
 import { useWallet } from '../context/WalletContext';
 import { Ionicons } from '@expo/vector-icons';
 import Card from '../components/Card';
+import GradientButton from '../components/GradientButton';
 
 export default function CardScreen() {
-  const { user } = useWallet();
-  const [isFrozen, setIsFrozen] = useState(false);
+  const { user, requestVirtualCard, toggleCardFreeze } = useWallet();
   const [showDetails, setShowDetails] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const toggleFreeze = () => {
-    setIsFrozen(!isFrozen);
-    Alert.alert(
-      isFrozen ? 'Card Unfrozen' : 'Card Frozen',
-      isFrozen ? 'Your virtual card is now active for transactions.' : 'Your virtual card has been temporarily locked.'
-    );
+  // Grab the first card from the user's profile
+  const activeCard = user?.cards?.[0];
+
+  const handleToggleFreeze = async () => {
+    if (!activeCard) return;
+    setLoading(true);
+    try {
+      await toggleCardFreeze(activeCard.id, !activeCard.isFrozen);
+      Alert.alert(
+        activeCard.isFrozen ? 'Card Unfrozen' : 'Card Frozen',
+        activeCard.isFrozen ? 'Your virtual card is now active for transactions.' : 'Your virtual card has been temporarily locked.'
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Could not update card status.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleRequestCard = async () => {
+    setLoading(true);
+    try {
+      await requestVirtualCard();
+      Alert.alert('Success', 'Your virtual card has been generated!');
+    } catch (error) {
+      Alert.alert('Error', 'Could not generate virtual card.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!activeCard) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.wrapper}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Zanny Cards</Text>
+            <Text style={styles.subtitle}>Get a premium virtual multi-currency card</Text>
+          </View>
+          <View style={styles.noCardContainer}>
+            <Ionicons name="card-outline" size={64} color={colors.textMuted} />
+            <Text style={styles.noCardText}>You don't have a virtual card yet.</Text>
+            <GradientButton 
+              title="Generate Virtual Card" 
+              onPress={handleRequestCard} 
+              loading={loading} 
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -26,64 +73,74 @@ export default function CardScreen() {
           <Text style={styles.subtitle}>Premium virtual multi-currency card</Text>
         </View>
 
-        {/* Premium Dark Virtual Card Component */}
-        <View style={[styles.creditCard, isFrozen && styles.frozenCard]}>
+        {/* Dynamic Card Rendering */}
+        <View style={[styles.creditCard, activeCard.isFrozen && styles.frozenCard]}>
           <View style={styles.cardTop}>
-            <Text style={styles.cardType}>VIRTUAL ULTRA</Text>
-            <Ionicons name="card" size={28} color={isFrozen ? '#888' : '#F5B700'} />
+            <Text style={styles.cardType}>{activeCard.type || 'VIRTUAL ULTRA'}</Text>
+            <Ionicons name="card" size={28} color={activeCard.isFrozen ? '#888' : '#F5B700'} />
           </View>
-          
+
           <Text style={styles.cardNumber}>
-            {showDetails && !isFrozen ? '5412  7589  2491  4032' : '••••  ••••  ••••  4032'}
+            {showDetails && !activeCard.isFrozen 
+              ? activeCard.cardNumber.replace(/(.{4})/g, '$1  ').trim() 
+              : `••••  ••••  ••••  ${activeCard.cardNumber.slice(-4)}`}
           </Text>
 
           <View style={styles.cardBottom}>
             <View>
               <Text style={styles.cardLabel}>CARD HOLDER</Text>
-              <Text style={styles.cardHolder}>{user?.name?.toUpperCase() || 'FINTECH PRO'}</Text>
+              <Text style={styles.cardHolder}>{user?.name?.toUpperCase()}</Text>
             </View>
             <View style={styles.cardExpiryRow}>
               <View style={{ marginRight: 20 }}>
                 <Text style={styles.cardLabel}>EXPIRES</Text>
-                <Text style={styles.cardValue}>{showDetails && !isFrozen ? '09/30' : '••/••'}</Text>
+                <Text style={styles.cardValue}>{showDetails && !activeCard.isFrozen ? activeCard.expiry : '••/••'}</Text>
               </View>
               <View>
                 <Text style={styles.cardLabel}>CVV</Text>
-                <Text style={styles.cardValue}>{showDetails && !isFrozen ? '294' : '•••'}</Text>
+                <Text style={styles.cardValue}>{showDetails && !activeCard.isFrozen ? activeCard.cvv : '•••'}</Text>
               </View>
             </View>
           </View>
-          {isFrozen && <View style={styles.frozenOverlay}><Text style={styles.frozenText}>FROZEN</Text></View>}
+          {activeCard.isFrozen && <View style={styles.frozenOverlay}><Text style={styles.frozenText}>FROZEN</Text></View>}
         </View>
 
-        {/* Controls Layout */}
+        {/* Controls */}
         <Card style={styles.controlCard}>
           <View style={styles.controlRow}>
             <View style={styles.controlMeta}>
-              <Ionicons name={isFrozen ? 'lock-open-outline' : 'lock-closed-outline'} size={22} color={colors.textDark} />
+              <Ionicons name={activeCard.isFrozen ? 'lock-open-outline' : 'lock-closed-outline'} size={22} color={colors.textDark} />
               <View style={{ marginLeft: 14 }}>
                 <Text style={styles.controlTitle}>Freeze Card</Text>
                 <Text style={styles.controlDesc}>Temporarily lock transactions</Text>
               </View>
             </View>
-            <Switch value={isFrozen} onValueChange={toggleFreeze} trackColor={{ false: '#ddd', true: colors.primary }} />
+            {loading ? (
+               <ActivityIndicator color={colors.primary} />
+            ) : (
+               <Switch 
+                 value={activeCard.isFrozen} 
+                 onValueChange={handleToggleFreeze} 
+                 trackColor={{ false: '#ddd', true: colors.primary }} 
+               />
+            )}
           </View>
 
           <View style={styles.divider} />
 
-          <TouchableOpacity 
-            style={styles.controlRow} 
-            onPress={() => !isFrozen && setShowDetails(!showDetails)}
-            disabled={isFrozen}
+          <TouchableOpacity
+            style={styles.controlRow}
+            onPress={() => !activeCard.isFrozen && setShowDetails(!showDetails)}
+            disabled={activeCard.isFrozen}
           >
             <View style={styles.controlMeta}>
-              <Ionicons name={showDetails ? 'eye-off-outline' : 'eye-outline'} size={22} color={isFrozen ? '#bbb' : colors.textDark} />
+              <Ionicons name={showDetails ? 'eye-off-outline' : 'eye-outline'} size={22} color={activeCard.isFrozen ? '#bbb' : colors.textDark} />
               <View style={{ marginLeft: 14 }}>
-                <Text style={[styles.controlTitle, isFrozen && { color: '#bbb' }]}>Reveal Details</Text>
+                <Text style={[styles.controlTitle, activeCard.isFrozen && { color: '#bbb' }]}>Reveal Details</Text>
                 <Text style={styles.controlDesc}>View secure PAN, Expiry, and CVV</Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={isFrozen ? '#bbb' : '#ccc'} />
+            <Ionicons name="chevron-forward" size={18} color={activeCard.isFrozen ? '#bbb' : '#ccc'} />
           </TouchableOpacity>
         </Card>
       </View>
@@ -91,6 +148,7 @@ export default function CardScreen() {
   );
 }
 
+// ... Keep your existing styles down here!
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgLight },
   wrapper: { padding: 20 },
@@ -114,5 +172,8 @@ const styles = StyleSheet.create({
   controlMeta: { flexDirection: 'row', alignItems: 'center' },
   controlTitle: { fontSize: 15, fontWeight: '600', color: colors.textDark },
   controlDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  divider: { height: 1, backgroundColor: colors.border, marginHorizontal: 16 }
+  divider: { height: 1, backgroundColor: colors.border, marginHorizontal: 16 },
+  noCardContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 40 },
+  noCardText: { color: colors.textDark, fontSize: 16, marginTop: 16, marginBottom: 24, fontWeight: '500' }
 });
+
