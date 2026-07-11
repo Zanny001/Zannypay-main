@@ -29,8 +29,6 @@ export default function LoginScreen({ navigation }) {
     const compatible = await LocalAuthentication.hasHardwareAsync();
     if (!compatible) return Alert.alert('Error', 'Biometrics not supported on this device.');
 
-    // Biometrics only ever unlock a PIN that was explicitly saved on this
-    // device from Profile > Biometric Login — never a guessed/default PIN.
     const savedPhone = phone.trim() || (await SecureStorage.get(BIOMETRIC_PHONE_KEY));
     if (!savedPhone) {
       Alert.alert('Not Set Up', 'Enable Biometric Login from Settings after your first PIN login.');
@@ -49,7 +47,7 @@ export default function LoginScreen({ navigation }) {
 
     if (result.success) {
       if (!phone.trim()) setPhone(savedPhone);
-      setPin(savedPin); // Triggers the useEffect login with the real PIN
+      setPin(savedPin);
     }
   };
 
@@ -63,17 +61,24 @@ export default function LoginScreen({ navigation }) {
 
       const triggerLogin = async () => {
         setLoading(true);
-        const res = await login(phone, pin);
-        setLoading(false);
-        if (!res.ok) {
-          Alert.alert('Login failed', res.error);
+        try {
+          const res = await login(phone, pin);
+          // Safely check if res exists before checking res.ok
+          if (res && res.ok === false) {
+            Alert.alert('Login failed', res.error || 'Invalid credentials');
+            setPin('');
+          }
+        } catch (error) {
+          Alert.alert('Login Error', error.message || 'Something went wrong.');
           setPin('');
+        } finally {
+          setLoading(false);
         }
       };
       
       triggerLogin();
     }
-  }, [pin, phone, login]); // <--- UPGRADED: Added missing dependencies
+  }, [pin, phone, login]); 
 
   return (
     <SafeAreaView style={styles.container}>
@@ -138,10 +143,7 @@ const styles = StyleSheet.create({
   welcome: { fontSize: 20, fontWeight: '800', color: colors.textDark },
   subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 6 },
   inputContainer: { width: '100%', marginBottom: 30, alignItems: 'center' },
-  input: {
-    width: '90%', height: 50, backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16,
-    fontSize: 16, color: colors.textDark, borderWidth: 1, borderColor: '#eee', textAlign: 'center',
-  },
+  input: { width: '90%', height: 50, backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16, fontSize: 16, color: colors.textDark, borderWidth: 1, borderColor: '#eee', textAlign: 'center' },
   dotsRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 40 },
   dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, borderColor: colors.primary, marginHorizontal: 8 },
   dotFilled: { backgroundColor: colors.primary },
@@ -149,3 +151,4 @@ const styles = StyleSheet.create({
   key: { width: '30%', aspectRatio: 1.4, alignItems: 'center', justifyContent: 'center' },
   keyText: { fontSize: 26, fontWeight: '600', color: colors.textDark },
 });
+
