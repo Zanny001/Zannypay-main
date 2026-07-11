@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import { View, Text, TextInput, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert, Modal, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GradientButton from '../components/GradientButton';
 import { colors } from '../theme/colors';
@@ -9,20 +9,19 @@ import { formatCurrency } from '../utils/format';
 const BANKS = ['Access Bank', 'First Bank', 'GTBank', 'UBA', 'Zenith Bank', 'Kuda', 'Opay', 'Palmpay'];
 
 export default function TransferScreen({ navigation, route }) {
+  const theme = colors.dark;
   const { balance, transferMoney } = useWallet();
-  const [transferType, setTransferType] = useState('internal'); // 'internal' | 'external'
+  const [transferType, setTransferType] = useState('internal');
   const [account, setAccount] = useState('');
   const [bank, setBank] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
   
-  // Modals and Loading States
   const [showBankDropdown, setShowBankDropdown] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Elite Modules (v2) — prefill from a saved Beneficiary, if navigated with params
   React.useEffect(() => {
     const params = route?.params;
     if (params?.prefillAccount) {
@@ -49,7 +48,7 @@ export default function TransferScreen({ navigation, route }) {
       Alert.alert('Insufficient Funds', 'You do not have enough balance for this transfer.');
       return;
     }
-    setShowPinModal(true); // Open PIN confirmation
+    setShowPinModal(true);
   };
 
   const handleConfirmTransfer = async () => {
@@ -82,50 +81,55 @@ export default function TransferScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.textDark} />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Send Money</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Send Money</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.balanceText}>Available: <Text style={{ color: colors.primary, fontWeight: '700' }}>{formatCurrency(balance)}</Text></Text>
+        <Text style={[styles.balanceText, { color: theme.textMuted }]}>
+          Available: <Text style={{ color: theme.success, fontWeight: '800' }}>{formatCurrency(balance)}</Text>
+        </Text>
 
-        <View style={styles.segmentControl}>
-          <TouchableOpacity 
-            style={[styles.segmentBtn, transferType === 'internal' && styles.segmentActive]}
+        <View style={[styles.segmentControl, { backgroundColor: theme.surface }]}>
+          <TouchableOpacity
+            style={[styles.segmentBtn, transferType === 'internal' && { backgroundColor: theme.surfaceAlt }]}
             onPress={() => setTransferType('internal')}
           >
-            <Text style={[styles.segmentText, transferType === 'internal' && styles.segmentTextActive]}>To Zannypay</Text>
+            <Text style={[styles.segmentText, { color: transferType === 'internal' ? theme.primary : theme.textMuted }]}>To Zannypay</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.segmentBtn, transferType === 'external' && styles.segmentActive]}
+          <TouchableOpacity
+            style={[styles.segmentBtn, transferType === 'external' && { backgroundColor: theme.surfaceAlt }]}
             onPress={() => setTransferType('external')}
           >
-            <Text style={[styles.segmentText, transferType === 'external' && styles.segmentTextActive]}>Other Banks</Text>
+            <Text style={[styles.segmentText, { color: transferType === 'external' ? theme.primary : theme.textMuted }]}>Other Banks</Text>
           </TouchableOpacity>
         </View>
 
         {transferType === 'external' && (
           <>
-            <Text style={styles.label}>Select Bank</Text>
-            <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setShowBankDropdown(!showBankDropdown)}>
-              <Text style={{ color: bank ? colors.textDark : colors.textMuted }}>{bank || 'Choose a bank'}</Text>
-              <Ionicons name="chevron-down" size={20} color={colors.textMuted} />
+            <Text style={[styles.label, { color: theme.text }]}>Select Bank</Text>
+            <TouchableOpacity 
+              style={[styles.dropdownTrigger, { backgroundColor: theme.surface, borderColor: theme.border }]} 
+              onPress={() => setShowBankDropdown(!showBankDropdown)}
+            >
+              <Text style={{ color: bank ? theme.text : theme.textMuted, fontWeight: '600' }}>{bank || 'Choose a bank'}</Text>
+              <Ionicons name="chevron-down" size={20} color={theme.textMuted} />
             </TouchableOpacity>
 
             {showBankDropdown && (
-              <View style={styles.dropdownList}>
+              <View style={[styles.dropdownList, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 {BANKS.map((b) => (
-                  <TouchableOpacity 
-                    key={b} 
-                    style={styles.dropdownItem} 
+                  <TouchableOpacity
+                    key={b}
+                    style={[styles.dropdownItem, { borderBottomColor: theme.border }]}
                     onPress={() => { setBank(b); setShowBankDropdown(false); }}
                   >
-                    <Text style={styles.dropdownItemText}>{b}</Text>
+                    <Text style={[styles.dropdownItemText, { color: theme.text }]}>{b}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -133,57 +137,63 @@ export default function TransferScreen({ navigation, route }) {
           </>
         )}
 
-        <Text style={styles.label}>Account Number</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="0000000000" 
-          keyboardType="number-pad" 
-          value={account} 
-          onChangeText={setAccount} 
-          maxLength={10} 
+        <Text style={[styles.label, { color: theme.text }]}>Account Number</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+          placeholder="0000000000"
+          placeholderTextColor={theme.textMuted}
+          keyboardType="number-pad"
+          value={account}
+          onChangeText={setAccount}
+          maxLength={10}
         />
 
-        <Text style={styles.label}>Amount</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="₦0.00" 
-          keyboardType="numeric" 
-          value={amount} 
-          onChangeText={setAmount} 
+        <Text style={[styles.label, { color: theme.text }]}>Amount</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+          placeholder="₦0.00"
+          placeholderTextColor={theme.textMuted}
+          keyboardType="numeric"
+          value={amount}
+          onChangeText={setAmount}
         />
 
-        <Text style={styles.label}>Add a Note (Optional)</Text>
-        <TextInput 
-          style={styles.input} 
-          placeholder="What is this for?" 
-          value={note} 
-          onChangeText={setNote} 
+        <Text style={[styles.label, { color: theme.text }]}>Add a Note (Optional)</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+          placeholder="What is this for?"
+          placeholderTextColor={theme.textMuted}
+          value={note}
+          onChangeText={setNote}
         />
-
-        <GradientButton title="Next" onPress={handleInitiateTransfer} style={{ marginTop: 30 }} />
+        
+        <GradientButton title="Next" onPress={handleInitiateTransfer} style={{ marginTop: 40 }} />
       </ScrollView>
 
       {/* PIN Confirmation Modal */}
       <Modal visible={showPinModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Confirm Transfer</Text>
-            <Text style={styles.modalSubtitle}>You are sending <Text style={{fontWeight:'700', color:colors.textDark}}>{formatCurrency(amount)}</Text> to {account}</Text>
+          <View style={[styles.modalCard, { backgroundColor: theme.surfaceAlt }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Confirm Transfer</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.textMuted }]}>
+              You are sending <Text style={{fontWeight:'800', color: theme.success}}>{formatCurrency(amount)}</Text> to {account}
+            </Text>
             
-            <TextInput 
-              style={[styles.input, { textAlign: 'center', fontSize: 24, letterSpacing: 8 }]} 
-              placeholder="••••" 
-              keyboardType="number-pad" 
-              secureTextEntry 
-              maxLength={4} 
-              value={pin} 
-              onChangeText={setPin} 
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.primary, color: theme.text, textAlign: 'center', fontSize: 24, letterSpacing: 12, marginTop: 10 }]}
+              placeholder="••••"
+              placeholderTextColor={theme.border}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              value={pin}
+              onChangeText={setPin}
               autoFocus
             />
 
-            <GradientButton title="Confirm & Send" onPress={handleConfirmTransfer} loading={loading} style={{ marginTop: 20 }} />
+            <GradientButton title="Confirm & Send" onPress={handleConfirmTransfer} loading={loading} style={{ marginTop: 25 }} />
             <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowPinModal(false); setPin(''); }}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+              <Text style={[styles.cancelBtnText, { color: theme.textMuted }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -193,27 +203,25 @@ export default function TransferScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bgLight, paddingTop: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10 },
+  container: { flex: 1, paddingTop: 20 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 15 },
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: colors.textDark },
+  headerTitle: { fontSize: 20, fontWeight: '800' },
   scroll: { padding: 24 },
-  balanceText: { textAlign: 'center', fontSize: 14, color: colors.textMuted, marginBottom: 24 },
-  segmentControl: { flexDirection: 'row', backgroundColor: '#EAE5F5', borderRadius: 12, padding: 4, marginBottom: 24 },
-  segmentBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8 },
-  segmentActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  segmentText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
-  segmentTextActive: { color: colors.primary },
-  label: { fontSize: 13, color: colors.textDark, fontWeight: '600', marginBottom: 8, marginTop: 16 },
-  input: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, borderWidth: 1, borderColor: colors.border },
-  dropdownTrigger: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1, borderColor: colors.border },
-  dropdownList: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: colors.border, marginTop: 8, maxHeight: 150 },
-  dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  dropdownItemText: { fontSize: 15, color: colors.textDark },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.textDark, textAlign: 'center' },
-  modalSubtitle: { fontSize: 14, color: colors.textMuted, textAlign: 'center', marginTop: 8, marginBottom: 24 },
-  cancelBtn: { marginTop: 16, padding: 12, alignItems: 'center' },
-  cancelBtnText: { color: colors.textMuted, fontWeight: '600', fontSize: 15 },
+  balanceText: { textAlign: 'center', fontSize: 14, marginBottom: 25, fontWeight: '600' },
+  segmentControl: { flexDirection: 'row', borderRadius: 16, padding: 6, marginBottom: 25 },
+  segmentBtn: { flex: 1, paddingVertical: 14, alignItems: 'center', borderRadius: 12 },
+  segmentText: { fontSize: 14, fontWeight: '700' },
+  label: { fontSize: 13, fontWeight: '700', marginBottom: 10, marginTop: 20 },
+  input: { borderRadius: 16, paddingHorizontal: 20, paddingVertical: 16, fontSize: 16, borderWidth: 1, fontWeight: '600' },
+  dropdownTrigger: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 16, paddingHorizontal: 20, paddingVertical: 16, borderWidth: 1 },
+  dropdownList: { borderRadius: 16, borderWidth: 1, marginTop: 10, maxHeight: 180, overflow: 'hidden' },
+  dropdownItem: { padding: 16, borderBottomWidth: 1 },
+  dropdownItemText: { fontSize: 15, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalCard: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 30, paddingBottom: 50 },
+  modalTitle: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  modalSubtitle: { fontSize: 15, textAlign: 'center', marginTop: 10, marginBottom: 25 },
+  cancelBtn: { marginTop: 20, padding: 15, alignItems: 'center' },
+  cancelBtnText: { fontWeight: '700', fontSize: 16 },
 });

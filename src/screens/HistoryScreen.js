@@ -5,7 +5,8 @@ import { colors } from '../theme/colors';
 import { useWallet } from '../context/WalletContext';
 import TransactionRow from '../components/TransactionRow';
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }) {
+  const theme = colors.dark;
   const { transactions, syncWallet } = useWallet();
   const [filter, setFilter] = useState('all'); // 'all' | 'credit' | 'debit'
   const [refreshing, setRefreshing] = useState(false);
@@ -22,20 +23,30 @@ export default function HistoryScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Transaction History</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: theme.text }]}>Transaction History</Text>
+        <TouchableOpacity style={styles.backBtn}>
+          <Ionicons name="search" size={24} color={theme.text} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.filterContainer}>
         {['all', 'credit', 'debit'].map((f) => (
-          <TouchableOpacity 
-            key={f} 
-            style={[styles.filterPill, filter === f && styles.filterPillActive]}
+          <TouchableOpacity
+            key={f}
+            style={[
+              styles.filterPill, 
+              { backgroundColor: filter === f ? theme.primary : theme.surface },
+              filter === f && styles.filterPillActive
+            ]}
             onPress={() => setFilter(f)}
           >
-            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
-              {f === 'all' ? 'All Transactions' : f === 'credit' ? 'Money In' : 'Money Out'}
+            <Text style={[styles.filterText, { color: filter === f ? '#FFF' : theme.textMuted }]}>
+              {f === 'all' ? 'All' : f === 'credit' ? 'Money In' : 'Money Out'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -48,15 +59,15 @@ export default function HistoryScreen() {
         renderItem={({ item }) => <TransactionRow txn={item} />}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyStateContainer}>
-            <View style={styles.emptyIconWrap}>
-              <Ionicons name="search-outline" size={32} color={colors.primary} />
+            <View style={[styles.emptyIconWrap, { backgroundColor: theme.surface }]}>
+              <Ionicons name="receipt-outline" size={32} color={theme.primary} />
             </View>
-            <Text style={styles.emptyTitle}>No Records Found</Text>
-            <Text style={styles.emptySub}>You do not have any {filter !== 'all' ? filter : ''} transactions yet.</Text>
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>No Records Found</Text>
+            <Text style={[styles.emptySub, { color: theme.textMuted }]}>You do not have any {filter !== 'all' ? filter : ''} transactions yet.</Text>
           </View>
         }
       />
@@ -65,17 +76,17 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bgLight, paddingTop: 20 },
-  header: { paddingHorizontal: 20, marginBottom: 16 },
-  title: { fontSize: 24, fontWeight: '800', color: colors.textDark },
-  filterContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 16, gap: 8 },
-  filterPill: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#EAE5F5', borderWidth: 1, borderColor: 'transparent' },
-  filterPillActive: { backgroundColor: '#fff', borderColor: colors.primary },
-  filterText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
-  filterTextActive: { color: colors.primary },
-  listContent: { paddingHorizontal: 20, paddingBottom: 40, flexGrow: 1 },
-  emptyStateContainer: { alignItems: 'center', marginTop: 60 },
-  emptyIconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#F0EBFC', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textDark, marginBottom: 8 },
-  emptySub: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
+  container: { flex: 1, paddingTop: 20 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 25 },
+  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 20 },
+  title: { fontSize: 20, fontWeight: '800' },
+  filterContainer: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 20, gap: 10 },
+  filterPill: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 24, borderWidth: 1, borderColor: 'transparent' },
+  filterPillActive: { shadowColor: '#6236FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  filterText: { fontSize: 14, fontWeight: '700' },
+  listContent: { paddingBottom: 40, flexGrow: 1 },
+  emptyStateContainer: { alignItems: 'center', marginTop: 80, paddingHorizontal: 40 },
+  emptyIconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', marginBottom: 10 },
+  emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
 });

@@ -3,18 +3,18 @@ import { View, StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
 
 export default function Card({ children, style }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+  // Using the dark surface as the base structural card
+  return <View style={[styles.card, { backgroundColor: colors.dark.surface }, style]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.card,
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: 20,
+    padding: 20,
     shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
 });
