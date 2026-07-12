@@ -1,254 +1,488 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { apiGet, apiPost } from '../utils/api'; // Assuming you have a standard API wrapper
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { AppState } from 'react-native';
+import { saveJSON, loadJSON } from '../utils/storage';
+import { apiGet, apiPost, getSavedToken, saveToken, clearToken } from '../services/apiClient';
+import { SyncEngine } from '../services/SyncEngine';
 
 const WalletContext = createContext(null);
 
-export const useWallet = () => {
-  const context = useContext(WalletContext);
-  if (!context) {
-    throw new Error('useWallet must be used within a WalletProvider');
-  }
-  return context;
+const STORAGE_KEYS = {
+  USER: 'zannypay:user',
+  BALANCE: 'zannypay:balance',
+  TXNS: 'zannypay:transactions',
+  ONBOARDED: 'zannypay:onboarded',
+  SAVINGS_GOALS: 'zannypay:savingsGoals',
+  LOAN: 'zannypay:activeLoan',
+  HIDE_BALANCE: 'zannypay:hideBalance',
+  LOCAL_INVOICES: 'zannypay:localInvoices',
 };
 
-export const WalletProvider = ({ children }) => {
-  // Core State
-  const [balance, setBalance] = useState(0);
-  const [isBalanceHidden, setIsBalanceHidden] = useState(false);
-  const [transactions, setTransactions] = useState([]);
-  const [user, setUser] = useState(null);
+const SAVINGS_APY = 0.15; // Default rate; overridden by server value if the backend supplies one
+const STARTING_BALANCE = 0;
+const BASE_CREDIT_LIMIT = 50000;
+
+const toNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+function mergeTransactionFeeds(remoteTxns = [], localInvoices = []) {
+  const remoteIds = new Set(remoteTxns.map((t) => t.id));
+  const extras = localInvoices.filter((t) => !remoteIds.has(t.id));
+  return [...remoteTxns, ...extras].sort((a, b) => {
+    const aTime = new Date(a.createdAt || a.date || 0).getTime();
+    const bTime = new Date(b.createdAt || b.date || 0).getTime();
+    return bTime - aTime;
+  });
+}
+
+export function WalletProvider({ children }) {
   const [loading, setLoading] = useState(true);
-
-  // Wealth / Savings State
+  const [onboarded, setOnboarded] = useState(false);
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [balance, setBalance] = useState(STARTING_BALANCE);
+  const [transactions, setTransactions] = useState([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [savingsGoals, setSavingsGoals] = useState([]);
-  const [savingsApy] = useState(0.12); // 12% APY Default
-
-  // Finance / Loan State
+  const [savingsApy, setSavingsApy] = useState(SAVINGS_APY);
   const [loan, setLoan] = useState(null);
-  const [creditLimit, setCreditLimit] = useState(50000); // Dynamic based on user activity
+  const [isBalanceHidden, setIsBalanceHidden] = useState(false);
 
-  // ==========================================
-  // INITIALIZATION & SYNC
-  // ==========================================
+  const [serverCreditLimit, setServerCreditLimit] = useState(null);
+
+  const localInvoicesRef = useRef([]);
+
+  const toggleBalanceHidden = useCallback(async () => {
+    setIsBalanceHidden((prev) => {
+      const nextState = !prev;
+      saveJSON(STORAGE_KEYS.HIDE_BALANCE, nextState);
+      return nextState;
+    });
+  }, []);
+
   const syncWallet = useCallback(async () => {
     try {
-      // Assuming a generic /user/me or /wallet/sync endpoint fetches the composite state
-      const res = await apiGet('/wallet/sync');
-      if (res && res.data) {
-        setBalance(Number(res.data.wallet?.balance || 0));
-        setTransactions(res.data.transactions || []);
-        setUser(res.data.user || null);
-        setSavingsGoals(res.data.savingsGoals || []);
-        setLoan(res.data.loan || null);
-        setCreditLimit(res.data.creditLimit || 50000);
+      const data = await apiGet('/user/me');
+      if (data && data.user) {
+        setUser(data.user);
+        await saveJSON(STORAGE_KEYS.USER, data.user);
+
+        const walletBalance = data.balance !== undefined ? data.balance : data.user.wallet?.balance;
+        const processedBalance = toNumber(walletBalance);
+        setBalance(processedBalance);
+        await saveJSON(STORAGE_KEYS.BALANCE, processedBalance);
+
+        const remoteTxns = data.transactions || data.user.transactions || [];
+        const merged = mergeTransactionFeeds(remoteTxns, localInvoicesRef.current);
+        setTransactions(merged);
+        await saveJSON(STORAGE_KEYS.TXNS, merged);
+
+        if (data.user.savingsGoals) {
+          setSavingsGoals(data.user.savingsGoals);
+          await saveJSON(STORAGE_KEYS.SAVINGS_GOALS, data.user.savingsGoals);
+        }
+        if (data.user.loans) {
+          const activeLoan = data.user.loans.find((l) => !l.repaid) || null;
+          setLoan(activeLoan);
+          await saveJSON(STORAGE_KEYS.LOAN, activeLoan);
+        }
+
+        const rawLimit = data.creditLimit !== undefined ? data.creditLimit : data.user.creditLimit;
+        if (rawLimit !== undefined) {
+          setServerCreditLimit(toNumber(rawLimit));
+        }
+
+        const rawApy = data.savingsApy !== undefined ? data.savingsApy : data.user.savingsApy;
+        if (rawApy !== undefined) {
+          setSavingsApy(toNumber(rawApy));
+        }
+
+        return { ...data, transactions: merged, balance: processedBalance };
       }
-      return res?.data;
-    } catch (err) {
-      console.error('Wallet sync error:', err);
       return null;
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.log('Background sync failed:', error.message);
+      return null;
     }
   }, []);
 
+  const retryQueuedRequest = useCallback(async (item) => {
+    if (item.type !== 'POST_RETRY') return;
+    const { endpoint, payload } = item.payload;
+    const res = await apiPost(endpoint, payload, null, true);
+    if (!res || res.success === false) throw new Error('Retry failed');
+  }, []);
+
+  const drainOfflineQueue = useCallback(async () => {
+    await SyncEngine.processQueue(retryQueuedRequest);
+    await syncWallet();
+  }, [retryQueuedRequest, syncWallet]);
+
   useEffect(() => {
-    syncWallet();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && isAuthenticated) {
+        drainOfflineQueue();
+      }
+    });
+    return () => subscription.remove();
+  }, [isAuthenticated, drainOfflineQueue]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [
+          savedUser, savedBalance, savedTxns, savedOnboarded, savedToken,
+          savedGoals, savedLoan, savedHideBalance, savedInvoices,
+        ] = await Promise.all([
+          loadJSON(STORAGE_KEYS.USER, null),
+          loadJSON(STORAGE_KEYS.BALANCE, STARTING_BALANCE),
+          loadJSON(STORAGE_KEYS.TXNS, []),
+          loadJSON(STORAGE_KEYS.ONBOARDED, false),
+          getSavedToken(),
+          loadJSON(STORAGE_KEYS.SAVINGS_GOALS, []),
+          loadJSON(STORAGE_KEYS.LOAN, null),
+          loadJSON(STORAGE_KEYS.HIDE_BALANCE, false),
+          loadJSON(STORAGE_KEYS.LOCAL_INVOICES, []),
+        ]);
+
+        localInvoicesRef.current = savedInvoices || [];
+
+        setUser(savedUser);
+        setBalance(toNumber(savedBalance));
+        setTransactions(savedTxns);
+        setOnboarded(savedOnboarded);
+        setSavingsGoals(savedGoals || []);
+        setLoan(savedLoan || null);
+        setIsBalanceHidden(savedHideBalance || false);
+
+        if (savedToken && savedUser) {
+          setToken(savedToken);
+          setIsAuthenticated(true);
+          await syncWallet();
+          drainOfflineQueue();
+        }
+      } catch (error) {
+        console.error('Storage load error:', error);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [syncWallet]);
 
-  const toggleBalanceHidden = () => setIsBalanceHidden((prev) => !prev);
+  const completeOnboarding = useCallback(async () => {
+    setOnboarded(true);
+    await saveJSON(STORAGE_KEYS.ONBOARDED, true);
+  }, []);
 
-  // ==========================================
-  // TRANSACTIONS / PAYMENTS
-  // ==========================================
-  const transferFunds = async (payload) => {
+  const signup = useCallback(async ({ name, email, phone, pin }) => {
     try {
-      // payload: { recipientAccount, amount, pin, bank, note, recipientName }
-      const res = await apiPost('/wallet/transfer', {
-        ...payload,
-        amount: parseFloat(payload.amount),
-      });
-      if (res && res.success) {
-        await syncWallet();
-        return { ok: true, transactionId: res.transactionId };
+      const res = await apiPost('/auth/signup', { name, email: email?.trim(), phone, pin });
+      const validToken = res?.access_token || res?.token;
+
+      if (res && validToken) {
+        await saveToken(validToken);
+        setToken(validToken);
+        setUser(res.user);
+        setIsAuthenticated(true);
+        await saveJSON(STORAGE_KEYS.USER, res.user);
+        if (res.user?.balance !== undefined) {
+          const processedBalance = toNumber(res.user.balance);
+          setBalance(processedBalance);
+          await saveJSON(STORAGE_KEYS.BALANCE, processedBalance);
+        }
+        return { ok: true };
       }
-      return { ok: false, error: res?.error || 'Transfer failed.' };
+      return { ok: false, error: res?.error || 'Registration failed.' };
     } catch (err) {
-      return { ok: false, error: err.message || 'Network error during transfer.' };
+      return { ok: false, error: err.message || 'An error occurred during signup.' };
     }
-  };
+  }, []);
 
-  const fundWallet = async (amount) => {
+  const login = useCallback(async (phone, pin) => {
     try {
-      const res = await apiPost('/wallet/fund', { amount: parseFloat(amount) });
-      if (res && res.success) {
-        return { ok: true, authorizationUrl: res.authorizationUrl, reference: res.reference };
+      const res = await apiPost('/auth/login', { phone, pin });
+      const validToken = res?.access_token || res?.token;
+
+      if (res && validToken) {
+        await saveToken(validToken);
+        setToken(validToken);
+        setUser(res.user);
+        setIsAuthenticated(true);
+        await saveJSON(STORAGE_KEYS.USER, res.user);
+        await syncWallet();
+        return { ok: true };
       }
-      return { ok: false, error: res?.error || 'Could not initialize funding.' };
+      return { ok: false, error: res?.error || 'Invalid telephone number or PIN.' };
+    } catch (err) {
+      return { ok: false, error: err.message || 'Connection to server failed.' };
+    }
+  }, [syncWallet]);
+
+  const logout = useCallback(async () => {
+    setIsAuthenticated(false);
+    setToken(null);
+    setUser(null);
+    setBalance(0);
+    setTransactions([]);
+    setSavingsGoals([]);
+    setLoan(null);
+    setServerCreditLimit(null);
+    await clearToken();
+  }, []);
+
+  const transferMoney = useCallback(async ({ recipientAccount, amount, pin, bank, note, recipientName }) => {
+    try {
+      const payload = {
+        recipientAccount,
+        amount: parseFloat(amount),
+        pin,
+        bank,
+        note,
+        recipientName,
+      };
+      // FIXED ROUTE: /wallet/transfer
+      const res = await apiPost(
+        '/wallet/transfer',
+        payload,
+        { type: 'transfer', amount, account: recipientAccount }
+      );
+      if (res && res.success) {
+        const data = await syncWallet();
+        const txn = data?.transactions?.find((t) => t.id === res.transactionId) || null;
+        return { ok: true, txn, transactionId: res.transactionId };
+      }
+      return { ok: false, error: res?.error || 'Transfer was rejected.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  const payBill = async (payload) => {
+  const payBill = useCallback(async ({ billerName, category, amount, reference, pin }) => {
     try {
-      // payload: { billerName, category, amount, reference, pin }
-      const res = await apiPost('/wallet/billpay', {
-        ...payload,
-        amount: parseFloat(payload.amount),
-      });
+      // FIXED ROUTE: /wallet/billpay
+      const res = await apiPost(
+        '/wallet/billpay',
+        { billerName, category, amount: parseFloat(amount), reference, pin },
+        { type: 'bill', amount }
+      );
       if (res && res.success) {
-        await syncWallet();
-        return { ok: true, transactionId: res.transactionId };
+        const data = await syncWallet();
+        const txn = data?.transactions?.find((t) => t.id === res.transactionId) || null;
+        return { ok: true, txn };
       }
-      return { ok: false, error: res?.error || 'Bill payment failed.' };
+      return { ok: false, error: res?.error || 'Bill payment was rejected.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  const buyAirtime = async (payload) => {
+  const buyAirtime = useCallback(async ({ phone, amount, provider, pin, isData }) => {
     try {
-      // payload matches AirtimeDto: { phone, amount, provider }
-      const res = await apiPost('/wallet/airtime', {
-        phone: payload.phone,
-        amount: parseFloat(payload.amount),
-        provider: payload.provider,
-      });
+      // FIXED ROUTE: /wallet/airtime
+      const res = await apiPost(
+        '/wallet/airtime',
+        { phone, amount: parseFloat(amount), provider, pin, type: isData ? 'data' : 'airtime' },
+        { type: 'airtime', amount, account: phone }
+      );
       if (res && res.success) {
-        await syncWallet();
-        return { ok: true, transactionId: res.transactionId };
+        const data = await syncWallet();
+        const txn = data?.transactions?.find((t) => t.id === res.transactionId) || null;
+        return { ok: true, txn };
       }
       return { ok: false, error: res?.error || 'Airtime purchase failed.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  // ==========================================
-  // CARDS (CardScreen.js)
-  // ==========================================
-  const requestVirtualCard = async () => {
+  const fundWallet = useCallback(async (amount) => {
     try {
-      const res = await apiPost('/wallet/cards/request');
+      // FIXED ROUTE: /wallet/fund
+      const res = await apiPost('/wallet/fund', { amount: parseFloat(amount) });
       if (res && res.success) {
-        await syncWallet();
-        return { ok: true };
+        return { ok: true, authorizationUrl: res.authorizationUrl, reference: res.reference };
       }
-      return { ok: false, error: res?.error || 'Card generation failed.' };
+      return { ok: false, error: res?.error || 'Funding request failed.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, []);
 
-  const toggleCardFreeze = async (cardId, isFrozen) => {
+  const recordInvoice = useCallback(async ({ clientName, amount, description }) => {
     try {
-      const res = await apiPost(`/wallet/cards/${cardId}/freeze`, { isFrozen });
-      if (res && res.success) {
+      await apiPost('/invoices', { clientName, amount: parseFloat(amount), description });
+
+      const localTxn = {
+        id: `local-inv-${Date.now()}`,
+        type: 'invoice',
+        category: 'Invoices',
+        title: `Invoice to ${clientName}`,
+        subtitle: description,
+        amount: toNumber(amount),
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+        reference: `INV-${Date.now()}`,
+        local: true,
+      };
+
+      const updatedInvoices = [localTxn, ...localInvoicesRef.current];
+      localInvoicesRef.current = updatedInvoices;
+      await saveJSON(STORAGE_KEYS.LOCAL_INVOICES, updatedInvoices);
+
+      setTransactions((prev) => {
+        const merged = mergeTransactionFeeds(prev.filter((t) => !t.local), updatedInvoices);
+        saveJSON(STORAGE_KEYS.TXNS, merged);
+        return merged;
+      });
+
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message || 'Could not save this invoice on-device.' };
+    }
+  }, []);
+
+  const requestVirtualCard = useCallback(async () => {
+    try {
+      const res = await apiPost('/cards/request');
+      if (res && res.cardNumber) {
         await syncWallet();
         return { ok: true };
       }
-      return { ok: false, error: res?.error || 'Could not update card status.' };
+      return { ok: false, error: res?.error || 'Failed to generate card' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  // ==========================================
-  // LOANS (LoanScreen.js)
-  // ==========================================
-  const requestLoan = async ({ amount, termDays }) => {
+  const toggleCardFreeze = useCallback(async (cardId, isFrozen) => {
     try {
-      const res = await apiPost('/wallet/loans/request', { amount: parseFloat(amount), termDays });
-      if (res && res.success) {
+      const res = await apiPost(`/cards/${cardId}/freeze`, { isFrozen });
+      if (res && res.id) {
         await syncWallet();
         return { ok: true };
       }
-      return { ok: false, error: res?.error || 'Loan application declined.' };
+      return { ok: false, error: 'Failed to update card status.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  const repayLoan = async (amount) => {
+  const totalCredits = useMemo(() => {
+    return (transactions || [])
+      .filter((t) => t.type === 'credit')
+      .reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
+  }, [transactions]);
+
+  const computedCreditLimit = useMemo(() => {
+    const computed = BASE_CREDIT_LIMIT + totalCredits * 0.15;
+    return Math.min(Math.round(computed / 1000) * 1000, 1000000);
+  }, [totalCredits]);
+
+  const creditLimit = serverCreditLimit !== null ? serverCreditLimit : computedCreditLimit;
+
+  const requestLoan = useCallback(async ({ amount, termDays }) => {
     try {
-      const res = await apiPost('/wallet/loans/repay', { amount: parseFloat(amount) });
-      if (res && res.success) {
+      const res = await apiPost('/loans/request', {
+        amount: parseFloat(amount),
+        termDays: termDays ? Number(termDays) : undefined,
+      });
+      if (res && res.success && res.loan) {
+        setLoan(res.loan);
+        await saveJSON(STORAGE_KEYS.LOAN, res.loan);
         await syncWallet();
         return { ok: true, loan: res.loan };
       }
-      return { ok: false, error: res?.error || 'Repayment failed.' };
+      return { ok: false, error: res?.error || 'Loan request was declined.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  // ==========================================
-  // SAVINGS / WEALTH (SavingsScreen.js)
-  // ==========================================
-  const createSavingsGoal = async ({ name, target }) => {
+  const repayLoan = useCallback(async (amount) => {
     try {
-      const res = await apiPost('/wallet/savings/create', { name, target: parseFloat(target) });
-      if (res && res.success) {
+      const res = await apiPost('/loans/repay', { amount: parseFloat(amount) });
+      if (res && res.success && res.loan) {
+        const nextLoan = res.loan.repaid ? null : res.loan;
+        setLoan(nextLoan);
+        await saveJSON(STORAGE_KEYS.LOAN, nextLoan);
         await syncWallet();
-        return { ok: true };
+        return { ok: true, loan: res.loan };
       }
-      return { ok: false, error: res?.error || 'Failed to create goal.' };
+      return { ok: false, error: res?.error || 'Repayment was rejected.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
 
-  const depositToSavings = async (goalId, amount) => {
+  const createSavingsGoal = useCallback(async ({ name, target }) => {
     try {
-      const res = await apiPost(`/wallet/savings/${goalId}/deposit`, { amount: parseFloat(amount) });
-      if (res && res.success) {
-        await syncWallet();
-        return { ok: true };
+      const res = await apiPost('/savings/goal', { name, target: parseFloat(target) });
+      if (res && res.success && res.goal) {
+        setSavingsGoals((prev) => {
+          const updated = [res.goal, ...prev];
+          saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
+          return updated;
+        });
+        return { ok: true, goal: res.goal };
       }
-      return { ok: false, error: res?.error || 'Deposit failed.' };
+      return { ok: false, error: res?.error || 'Could not create this savings goal.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, []);
 
-  const withdrawFromSavings = async (goalId, amount) => {
+  const depositToSavings = useCallback(async (goalId, amount) => {
     try {
-      const res = await apiPost(`/wallet/savings/${goalId}/withdraw`, { amount: parseFloat(amount) });
-      if (res && res.success) {
+      const res = await apiPost('/savings/deposit', { goalId, amount: parseFloat(amount) });
+      if (res && res.success && res.goal) {
+        setSavingsGoals((prev) => {
+          const updated = prev.map((g) => (g.id === res.goal.id ? res.goal : g));
+          saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
+          return updated;
+        });
         await syncWallet();
-        return { ok: true };
+        return { ok: true, goal: res.goal };
       }
-      return { ok: false, error: res?.error || 'Withdrawal failed.' };
+      return { ok: false, error: res?.error || 'Deposit was rejected.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
-  };
+  }, [syncWallet]);
+
+  const withdrawFromSavings = useCallback(async (goalId, amount) => {
+    try {
+      const res = await apiPost('/savings/withdraw', { goalId, amount: parseFloat(amount) });
+      if (res && res.success && res.goal) {
+        setSavingsGoals((prev) => {
+          const updated = prev.map((g) => (g.id === res.goal.id ? res.goal : g));
+          saveJSON(STORAGE_KEYS.SAVINGS_GOALS, updated);
+          return updated;
+        });
+        await syncWallet();
+        return { ok: true, goal: res.goal };
+      }
+      return { ok: false, error: res?.error || 'Withdrawal was rejected.' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }, [syncWallet]);
 
   const value = {
-    loading,
-    user,
-    balance,
-    isBalanceHidden,
-    transactions,
-    savingsGoals,
-    savingsApy,
-    loan,
-    creditLimit,
-    toggleBalanceHidden,
-    syncWallet,
-    transferFunds,
-    fundWallet,
-    payBill,
-    buyAirtime,
-    requestVirtualCard,
-    toggleCardFreeze,
-    requestLoan,
-    repayLoan,
-    createSavingsGoal,
-    depositToSavings,
-    withdrawFromSavings,
+    loading, onboarded, completeOnboarding, user, isAuthenticated,
+    signup, login, logout, balance, transactions,
+    transferMoney, payBill, buyAirtime, fundWallet, syncWallet, recordInvoice,
+    savingsGoals, createSavingsGoal, depositToSavings, withdrawFromSavings, savingsApy,
+    loan, creditLimit, requestLoan, repayLoan,
+    isBalanceHidden, toggleBalanceHidden,
+    requestVirtualCard, toggleCardFreeze,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
-};
+}
+
+export function useWallet() {
+  const ctx = useContext(WalletContext);
+  if (!ctx) throw new Error('useWallet must be used within WalletProvider');
+  return ctx;
+}

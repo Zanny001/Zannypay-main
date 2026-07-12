@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -143,7 +143,10 @@ export default function AirtimeScreen({ navigation }) {
 
       {/* PIN Confirmation Modal */}
       <Modal visible={pinModalVisible} transparent animationType="fade" onRequestClose={() => setPinModalVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Confirm Purchase</Text>
             <Text style={[styles.modalSubtitle, { color: theme.textMuted }]}>
@@ -153,7 +156,7 @@ export default function AirtimeScreen({ navigation }) {
               style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text, textAlign: 'center', fontSize: 24, letterSpacing: 8 }]}
               placeholder="••••"
               placeholderTextColor={theme.textMuted}
-              keyboardType="number-pad"
+              keyboardType="numeric"
               secureTextEntry
               maxLength={4}
               value={pin}
@@ -165,7 +168,7 @@ export default function AirtimeScreen({ navigation }) {
               <Text style={{ color: theme.textMuted, fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );

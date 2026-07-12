@@ -1,9 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, RefreshControl, Modal, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { formatCurrency, maskAccount } from '../utils/format';
 import { useWallet } from '../context/WalletContext';
@@ -11,16 +11,24 @@ import { getUnreadCount } from '../utils/notifications';
 import TransactionRow from '../components/TransactionRow';
 import FundModal from '../components/FundModal';
 
-// <-- ADDED AIRTIME HERE -->
+// Primary 8-Item Grid
 const QUICK_ACTIONS = [
   { key: 'Transfer', icon: 'swap-horizontal', label: 'Transfer' },
   { key: 'Airtime', icon: 'phone-portrait-outline', label: 'Airtime' },
   { key: 'Bills', icon: 'receipt-outline', label: 'Bills' },
+  { key: 'Cards', icon: 'card-outline', label: 'Cards' },
   { key: 'Fund', icon: 'add-circle-outline', label: 'Fund Wallet' },
-  { key: 'Savings', icon: 'trending-up-outline', label: 'Save & Grow' },
-  { key: 'Loans', icon: 'cash-outline', label: 'Flexi Credit' },
+  { key: 'Invoice', icon: 'document-text-outline', label: 'Invoices' },
   { key: 'Beneficiaries', icon: 'people-outline', label: 'Recipients' },
-  { key: 'QRPay', icon: 'qr-code-outline', label: 'My Code' },
+  { key: 'More', icon: 'grid-outline', label: 'More' },
+];
+
+// Expanded Menu Items
+const MORE_ACTIONS = [
+  { key: 'QRPay', icon: 'qr-code-outline', label: 'QR Pay' },
+  { key: 'Insights', icon: 'pie-chart-outline', label: 'Analytics' },
+  { key: 'Support', icon: 'help-buoy-outline', label: 'Support' },
+  { key: 'DeveloperConsole', icon: 'code-slash-outline', label: 'Dev Console' },
 ];
 
 export default function DashboardScreen({ navigation }) {
@@ -28,6 +36,7 @@ export default function DashboardScreen({ navigation }) {
   const { user, balance, transactions, syncWallet, isBalanceHidden, toggleBalanceHidden } = useWallet();
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [fundModalVisible, setFundModalVisible] = useState(false);
+  const [moreModalVisible, setMoreModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -39,8 +48,13 @@ export default function DashboardScreen({ navigation }) {
 
   const handleQuickAction = (key) => {
     if (key === 'Fund') return setFundModalVisible(true);
-    if (key === 'Bills') return navigation.navigate('Bills');
-    navigation.navigate(key); // This will route to 'Airtime' automatically now
+    if (key === 'More') return setMoreModalVisible(true);
+    navigation.navigate(key);
+  };
+
+  const handleMoreAction = (key) => {
+    setMoreModalVisible(false);
+    navigation.navigate(key);
   };
 
   const onRefresh = async () => {
@@ -52,6 +66,7 @@ export default function DashboardScreen({ navigation }) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}>
+        {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.userInfoRow}>
             <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
@@ -87,6 +102,7 @@ export default function DashboardScreen({ navigation }) {
           </View>
         </View>
 
+        {/* BALANCE CARD */}
         <LinearGradient colors={['#2A1F45', '#1A1525']} style={styles.balanceCard}>
           <View style={styles.balanceTopRow}>
             <Text style={styles.balanceLabel}>Total Balance</Text>
@@ -108,6 +124,7 @@ export default function DashboardScreen({ navigation }) {
           </View>
         </LinearGradient>
 
+        {/* QUICK ACTIONS GRID */}
         {!isFocusMode && (
           <View style={styles.gridContainer}>
             {QUICK_ACTIONS.map((action) => (
@@ -121,6 +138,7 @@ export default function DashboardScreen({ navigation }) {
           </View>
         )}
 
+        {/* RECENT ACTIVITY */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
           {!isFocusMode && (
@@ -148,7 +166,33 @@ export default function DashboardScreen({ navigation }) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* FUND MODAL */}
       <FundModal visible={fundModalVisible} onClose={() => setFundModalVisible(false)} />
+
+      {/* MORE SERVICES MODAL */}
+      <Modal visible={moreModalVisible} animationType="slide" transparent={true} onRequestClose={() => setMoreModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>All Services</Text>
+              <TouchableOpacity onPress={() => setMoreModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.gridContainer}>
+              {MORE_ACTIONS.map((action) => (
+                <TouchableOpacity key={action.key} style={styles.gridItem} onPress={() => handleMoreAction(action.key)}>
+                  <View style={[styles.gridIconWrap, { backgroundColor: theme.surface }]}>
+                    <Ionicons name={action.icon} size={24} color={theme.primary} />
+                  </View>
+                  <Text style={[styles.gridLabel, { color: theme.text }]}>{action.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <SafeAreaView edges={['bottom']} />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -188,4 +232,9 @@ const styles = StyleSheet.create({
   emptyIconWrap: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, minHeight: 300 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  closeBtn: { padding: 4 },
 });
