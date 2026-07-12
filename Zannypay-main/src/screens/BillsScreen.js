@@ -16,8 +16,6 @@ const CATEGORIES = [
 ];
 
 const PROVIDERS = {
-  airtime: ['MTN', 'Airtel', 'Glo', '9mobile'],
-  data: ['MTN Data', 'Airtel Data', 'Glo Data', '9mobile Data'],
   electricity: ['EKEDC', 'IKEDC', 'AEDC', 'PHED'],
   tv: ['DSTV', 'GOtv', 'StarTimes'],
   water: ['Lagos Water Corp'],
@@ -69,7 +67,6 @@ export default function BillsScreen({ navigation, route }) {
   if (!category) {
     return (
       <SafeAreaView style={styles.container}>
-        {/* Professional Standardized Header with Back Key */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color={colors.textDark} />
@@ -83,7 +80,18 @@ export default function BillsScreen({ navigation, route }) {
           
           <View style={styles.grid}>
             {CATEGORIES.map((c) => (
-              <TouchableOpacity key={c.key} style={styles.gridItem} onPress={() => setCategory(c.key)}>
+              <TouchableOpacity 
+                key={c.key} 
+                style={styles.gridItem} 
+                onPress={() => {
+                  // FIXED: Intercept Airtime and Data to navigate to their dedicated screen
+                  if (c.key === 'airtime' || c.key === 'data') {
+                    navigation.navigate('Airtime'); // Ensure your App.js navigator maps 'Airtime' correctly!
+                  } else {
+                    setCategory(c.key);
+                  }
+                }}
+              >
                 <View style={styles.iconWrap}>
                   <Ionicons name={c.icon} size={26} color={colors.primary} />
                 </View>
@@ -99,7 +107,6 @@ export default function BillsScreen({ navigation, route }) {
   // View 2: Specific Bill Payment Form
   return (
     <SafeAreaView style={styles.container}>
-      {/* Professional Standardized Header with Back Key (Returns to Grid) */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setCategory(null)} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.textDark} />
