@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Alert, AppState } from 'react-native';
 import { saveJSON, loadJSON } from '../utils/storage';
@@ -14,25 +15,17 @@ const STORAGE_KEYS = {
   SAVINGS_GOALS: 'zannypay:savingsGoals',
   LOAN: 'zannypay:activeLoan',
   HIDE_BALANCE: 'zannypay:hideBalance',
-  // Invoices have no backend module (see integration notes) so they're
-  // tracked purely on-device and re-merged into `transactions` on every sync.
   LOCAL_INVOICES: 'zannypay:localInvoices',
 };
 
 const SAVINGS_APY = 0.15;
 const STARTING_BALANCE = 0;
 
-// Prisma serializes Decimal columns (balance, amount, target, saved, etc.)
-// as strings over JSON. Every place that does arithmetic or comparisons on
-// a money value from the API needs to go through this first.
 const toNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
 };
 
-// Combines the server's transaction history with locally-tracked invoices
-// (which the backend has no endpoint for) into one de-duplicated, newest
-// -first feed for History/Analytics/Notifications to read from.
 function mergeTransactionFeeds(remoteTxns = [], localInvoices = []) {
   const remoteIds = new Set(remoteTxns.map((t) => t.id));
   const extras = localInvoices.filter((t) => !remoteIds.has(t.id));
@@ -55,8 +48,6 @@ export function WalletProvider({ children }) {
   const [loan, setLoan] = useState(null);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
 
-  // Kept in sync with the localInvoices persisted list so syncWallet() can
-  // merge them back in synchronously, without relying on stale closures.
   const localInvoicesRef = useRef([]);
 
   const toggleBalanceHidden = useCallback(async () => {
@@ -67,9 +58,6 @@ export function WalletProvider({ children }) {
     });
   }, []);
 
-  // Pulls /user/me (profile + wallet balance + last 50 transactions) and
-  // returns the raw payload so callers can read the fresh data immediately
-  // instead of racing React's state-update batching.
   const syncWallet = useCallback(async () => {
     try {
       const data = await apiGet('/user/me');
@@ -87,12 +75,6 @@ export function WalletProvider({ children }) {
         setTransactions(merged);
         await saveJSON(STORAGE_KEYS.TXNS, merged);
 
-        // NOTE: the backend's GET /user/me does not currently include
-        // savingsGoals/loans relations, so these will normally be
-        // undefined and we simply keep whatever we already have locally
-        // (populated by the savings/loan endpoints below). If the backend
-        // is updated to include them, this picks the fresher server copy
-        // up automatically.
         if (data.user.savingsGoals) {
           setSavingsGoals(data.user.savingsGoals);
           await saveJSON(STORAGE_KEYS.SAVINGS_GOALS, data.user.savingsGoals);
@@ -102,7 +84,6 @@ export function WalletProvider({ children }) {
           setLoan(activeLoan);
           await saveJSON(STORAGE_KEYS.LOAN, activeLoan);
         }
-
         return { ...data, transactions: merged, balance: processedBalance };
       }
       return null;
@@ -112,21 +93,15 @@ export function WalletProvider({ children }) {
     }
   }, []);
 
-  // Replays anything SyncEngine queued while the device was offline (a
-  // transfer, bill payment, etc. that failed with a network error). Without
-  // this, apiPost's offline queueing was write-only — nothing ever drained
-  // the queue.
   const retryQueuedRequest = useCallback(async (item) => {
     if (item.type !== 'POST_RETRY') return;
     const { endpoint, payload } = item.payload;
-    const res = await apiPost(endpoint, payload, null, true); // isRetry=true avoids re-enqueueing on repeat failure
+    const res = await apiPost(endpoint, payload, null, true);
     if (!res || res.success === false) throw new Error('Retry failed');
   }, []);
 
   const drainOfflineQueue = useCallback(async () => {
     await SyncEngine.processQueue(retryQueuedRequest);
-    // A queued transfer/bill/savings action may have just gone through —
-    // pull fresh balance & transactions so the UI reflects it.
     await syncWallet();
   }, [retryQueuedRequest, syncWallet]);
 
@@ -188,12 +163,7 @@ export function WalletProvider({ children }) {
 
   const signup = useCallback(async ({ name, email, phone, pin }) => {
     try {
-      // The backend requires a unique, valid email at the database level
-      // even though the DTO marks it optional, so we always send a
-      // trimmed value here; SignupScreen enforces it's present before
-      // calling this.
       const res = await apiPost('/auth/signup', { name, email: email?.trim(), phone, pin });
-
       const validToken = res?.access_token || res?.token;
 
       if (res && validToken) {
@@ -246,14 +216,6 @@ export function WalletProvider({ children }) {
     await clearToken();
   }, []);
 
-  // ==========================================
-  // Money movement — transfers, bills, airtime, funding
-  // ==========================================
-
-  // The backend's TransferDto only accepts { recipientAccount, amount, pin }
-  // — ValidationPipe is configured with forbidNonWhitelisted, so sending any
-  // extra field (bank, recipientName, note...) makes the WHOLE request fail
-  // with a 400. Those extra fields stay purely client-side for display.
   const transferMoney = useCallback(async ({ recipientAccount, amount, pin }) => {
     try {
       const res = await apiPost(
@@ -272,9 +234,6 @@ export function WalletProvider({ children }) {
     }
   }, [syncWallet]);
 
-  // Also backs Airtime/Data purchases (see buyAirtime below) since the
-  // backend has no dedicated airtime endpoint — everything routes through
-  // this same bill-payment pipeline.
   const payBill = useCallback(async ({ billerName, category, amount, reference, pin }) => {
     try {
       const res = await apiPost(
@@ -293,10 +252,6 @@ export function WalletProvider({ children }) {
     }
   }, [syncWallet]);
 
-  // NOTE: there is no /transactions/airtime route on the backend — this
-  // deliberately reuses payBill (category "Airtime" / "Data") so the
-  // purchase is still verified server-side (PIN check + real wallet debit)
-  // instead of being a purely cosmetic success message.
   const buyAirtime = useCallback(async ({ phone, amount, provider, pin, isData }) => {
     return payBill({
       billerName: provider,
@@ -307,10 +262,6 @@ export function WalletProvider({ children }) {
     });
   }, [payBill]);
 
-  // Kicks off a Paystack checkout. The wallet balance does NOT update
-  // immediately — Paystack confirms via webhook, and the caller (FundModal)
-  // opens `authorizationUrl` in a browser session, then calls syncWallet()
-  // once the browser session returns.
   const fundWallet = useCallback(async (amount) => {
     try {
       const res = await apiPost('/transactions/fund', { amount: parseFloat(amount) });
@@ -323,13 +274,12 @@ export function WalletProvider({ children }) {
     }
   }, []);
 
-  // The backend has no invoicing module at all, so this is a fully local
-  // feature: it's logged as a pseudo-transaction (type "invoice", category
-  // "Invoices" — matching what AnalyticsScreen/TransactionRow already
-  // expect) that lives in AsyncStorage and gets re-merged into
-  // `transactions` on every syncWallet() call.
   const recordInvoice = useCallback(async ({ clientName, amount, description }) => {
     try {
+      // Sync to our newly created backend module!
+      await apiPost('/invoices', { clientName, amount: parseFloat(amount), description });
+
+      // Keep the optimistic local UI update so the list feels instant
       const localTxn = {
         id: `local-inv-${Date.now()}`,
         type: 'invoice',
@@ -360,9 +310,36 @@ export function WalletProvider({ children }) {
   }, []);
 
   // ==========================================
-  // Savings goals (Cashbox). The backend only exposes create/deposit/
-  // withdraw — no GET to list a user's goals — so the list is maintained
-  // locally, seeded and updated from each endpoint's response.
+  // Cards Integration
+  // ==========================================
+  const requestVirtualCard = useCallback(async () => {
+    try {
+      const res = await apiPost('/cards/request');
+      if (res && res.cardNumber) {
+        await syncWallet();
+        return { ok: true };
+      }
+      return { ok: false, error: res?.error || 'Failed to generate card' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }, [syncWallet]);
+
+  const toggleCardFreeze = useCallback(async (cardId, isFrozen) => {
+    try {
+      const res = await apiPost(`/cards/${cardId}/freeze`, { isFrozen });
+      if (res && res.id) {
+        await syncWallet();
+        return { ok: true };
+      }
+      return { ok: false, error: 'Failed to update card status.' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }, [syncWallet]);
+
+  // ==========================================
+  // Savings & Loans
   // ==========================================
   const createSavingsGoal = useCallback(async ({ name, target }) => {
     try {
@@ -417,12 +394,6 @@ export function WalletProvider({ children }) {
     }
   }, [syncWallet]);
 
-  // ==========================================
-  // Flexi Credit (loans). Same limitation as savings — no GET for the
-  // active loan, so it's tracked locally from request/repay responses.
-  // creditLimit is a client-side illustrative heuristic (see integration
-  // notes) since the backend doesn't expose a real credit-scoring endpoint.
-  // ==========================================
   const totalCredits = useMemo(() => {
     return (transactions || [])
       .filter((t) => t.type === 'credit')
@@ -456,9 +427,6 @@ export function WalletProvider({ children }) {
     try {
       const res = await apiPost('/loans/repay', { amount: parseFloat(amount) });
       if (res && res.success && res.loan) {
-        // Once fully repaid it's no longer "active" — clear it so the UI
-        // falls back to the loan-application flow, mirroring the backend's
-        // own `repaid: false` filter for what counts as an active loan.
         const nextLoan = res.loan.repaid ? null : res.loan;
         setLoan(nextLoan);
         await saveJSON(STORAGE_KEYS.LOAN, nextLoan);
@@ -478,6 +446,7 @@ export function WalletProvider({ children }) {
     savingsGoals, createSavingsGoal, depositToSavings, withdrawFromSavings, savingsApy: SAVINGS_APY,
     loan, creditLimit, requestLoan, repayLoan,
     isBalanceHidden, toggleBalanceHidden,
+    requestVirtualCard, toggleCardFreeze, // <-- Exported to UI
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
@@ -488,3 +457,4 @@ export function useWallet() {
   if (!ctx) throw new Error('useWallet must be used within WalletProvider');
   return ctx;
 }
+
