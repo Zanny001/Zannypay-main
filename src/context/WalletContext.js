@@ -60,7 +60,7 @@ export function WalletProvider({ children }) {
 
         if (data.user.savingsGoals) {
           setSavingsGoals(data.user.savingsGoals);
-          await saveJSON(STORAGE_KEYS.SAVINGS_GOALS, data.user.savingsGoals);         
+          await saveJSON(STORAGE_KEYS.SAVINGS_GOALS, data.user.savingsGoals); 
         }
         if (data.user.loans) {
           const activeLoan = data.user.loans.find(l => !l.repaid) || null;
@@ -97,11 +97,11 @@ export function WalletProvider({ children }) {
 
         if (savedToken && savedUser) {
           setToken(savedToken);
-          setIsAuthenticated(true);                                                     
+          setIsAuthenticated(true);                                           
           syncWallet();
         }
       } catch (error) {
-        console.error("Storage load error:", error);                                
+        console.error("Storage load error:", error);                          
       } finally {
         setLoading(false);
       }
@@ -115,41 +115,37 @@ export function WalletProvider({ children }) {
 
   const signup = useCallback(async ({ name, email, phone, pin }) => {
     try {
-      const res = await apiPost('/auth/signup', { name, email, phone, pin });       
-      
-      // FIX: Check for access_token OR token
+      const res = await apiPost('/auth/signup', { name, email, phone, pin }); 
       const validToken = res?.access_token || res?.token;
-      
+
       if (res && validToken) {
         await saveToken(validToken);
         setToken(validToken);
-        setUser(res.user);                                                            
-        setIsAuthenticated(true);                                                     
+        setUser(res.user);                                                    
+        setIsAuthenticated(true);                                             
         await saveJSON(STORAGE_KEYS.USER, res.user);
         Alert.alert('Success', 'Account registered successfully!');
         return { ok: true };
-      } else {                                                                        
-        return { ok: false, error: res?.error || 'Registration failed.' };          
+      } else {                                                                
+        return { ok: false, error: res?.error || 'Registration failed.' };    
       }
     } catch (err) {
-      return { ok: false, error: err.message || 'An error occurred during signup.' };                                                                           
+      return { ok: false, error: err.message || 'An error occurred during signup.' };                                                                       
     }
   }, []);
-                                                                                
+                                                                              
   const login = useCallback(async (phone, pin) => {
-    try {                                                                           
+    try {                                                                     
       const res = await apiPost('/auth/login', { phone, pin });
-      
-      // FIX: Check for access_token OR token
       const validToken = res?.access_token || res?.token;
-      
+
       if (res && validToken) {
         await saveToken(validToken);
-        setToken(validToken);                                                          
+        setToken(validToken);                                                 
         setUser(res.user);
         setIsAuthenticated(true);
         await saveJSON(STORAGE_KEYS.USER, res.user);
-        await syncWallet();                                                           
+        await syncWallet();                                                   
         return { ok: true };
       } else {
         return { ok: false, error: res?.error || 'Invalid telephone number or PIN.' };
@@ -162,12 +158,12 @@ export function WalletProvider({ children }) {
   const logout = useCallback(async () => {
     setIsAuthenticated(false);
     setToken(null);
-    setUser(null);                                                                
-    setBalance(0);                                                                
+    setUser(null);                                                            
+    setBalance(0);                                                            
     setTransactions([]);
     setSavingsGoals([]);
     setLoan(null);
-    await clearToken();                                                         
+    await clearToken();                                                       
   }, []);
 
   const addTransactionOptimistically = useCallback(async (txn) => {
@@ -178,7 +174,7 @@ export function WalletProvider({ children }) {
     try {
       const res = await apiPost('/wallet/transfer', { recipientName, recipientAccount, bank, amount: parseFloat(amount), note, pin });
       if (res && res.success) {
-        if (res.transaction) addTransactionOptimistically(res.transaction);           
+        if (res.transaction) addTransactionOptimistically(res.transaction);   
         await syncWallet();
         return { ok: true };
       }
@@ -188,7 +184,7 @@ export function WalletProvider({ children }) {
     }
   }, [addTransactionOptimistically, syncWallet]);
 
-  const payBill = useCallback(async ({ billerName, category, amount, reference, pin }) => {                                                                     
+  const payBill = useCallback(async ({ billerName, category, amount, reference, pin }) => {                                                                 
     try {
       const res = await apiPost('/wallet/billpay', { billerName, category, amount: parseFloat(amount), reference, pin });
       if (res && res.success) {
@@ -229,17 +225,18 @@ export function WalletProvider({ children }) {
     }
   }, [syncWallet]);
 
+  // FIX: Point to the new standalone invoices controller path
   const recordInvoice = useCallback(async ({ clientName, amount, description }) => {
     try {
-      await apiPost('/wallet/invoice', { clientName, amount: parseFloat(amount), description });
+      await apiPost('/invoices', { clientName, amount: parseFloat(amount), description });
       return { ok: true };
-    } catch (err) {                                                                 
+    } catch (err) {                                                           
       return { ok: false, error: err.message };
     }
   }, []);
 
   const createSavingsGoal = useCallback(async ({ name, target }) => {
-    try {                                                                           
+    try {                                                                     
       const res = await apiPost('/savings/create', { name, target: parseFloat(target) });
       if (res && res.success) {
         await syncWallet();
@@ -268,10 +265,38 @@ export function WalletProvider({ children }) {
     try {
       const res = await apiPost(`/savings/withdraw/${goalId}`, { amount: parseFloat(amount) });
       if (res && res.success) {
-        await syncWallet();                                                           
+        await syncWallet();                                                   
         return { ok: true };
       }
       return { ok: false, error: res?.error || 'Withdrawal transaction failed.' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }, [syncWallet]);
+
+  // NEW: Request a virtual card
+  const requestVirtualCard = useCallback(async () => {
+    try {
+      const res = await apiPost('/cards/request');
+      if (res && res.cardNumber) {
+        await syncWallet();
+        return { ok: true };
+      }
+      return { ok: false, error: res?.error || 'Failed to generate card' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }, [syncWallet]);
+
+  // NEW: Toggle card freeze status
+  const toggleCardFreeze = useCallback(async (cardId, isFrozen) => {
+    try {
+      const res = await apiPost(`/cards/${cardId}/freeze`, { isFrozen });
+      if (res && res.id) {
+        await syncWallet();
+        return { ok: true };
+      }
+      return { ok: false, error: 'Failed to update card status.' };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -282,7 +307,7 @@ export function WalletProvider({ children }) {
       .filter((t) => t.type === 'credit')
       .reduce((sum, t) => sum + (Math.abs(parseFloat(t.amount)) || 0), 0);
   }, [transactions]);
-                                                                                
+                                                                              
   const creditLimit = useMemo(() => {
     const computed = 50000 + totalCredits * 0.15;
     return Math.min(Math.round(computed / 1000) * 1000, 1000000);
@@ -301,17 +326,17 @@ export function WalletProvider({ children }) {
     }
   }, [syncWallet]);
 
-  const repayLoan = useCallback(async (amount) => {                               
+  const repayLoan = useCallback(async (amount) => {                           
     try {
       const res = await apiPost('/loans/repay', { amount: parseFloat(amount) });
       if (res && res.success) {
         await syncWallet();
-        return { ok: true };                                                        
+        return { ok: true };                                                  
       }
       return { ok: false, error: res?.error || 'Payment execution rejected.' };
-    } catch (err) {                                                                 
+    } catch (err) {                                                           
       return { ok: false, error: err.message };
-    }                                                                           
+    }                                                                         
   }, [syncWallet]);
 
   const value = {
@@ -319,12 +344,13 @@ export function WalletProvider({ children }) {
     signup, login, logout, balance, transactions,
     transferMoney, payBill, buyAirtime, fundWallet, syncWallet, recordInvoice,
     savingsGoals, createSavingsGoal, depositToSavings, withdrawFromSavings, savingsApy: SAVINGS_APY,
-    loan, creditLimit, requestLoan, repayLoan,                                    
+    loan, creditLimit, requestLoan, repayLoan,                                
     isBalanceHidden, toggleBalanceHidden,
+    requestVirtualCard, toggleCardFreeze, // <-- NEW EXPORTS
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
-}                                                                             
+}
 
 export function useWallet() {
   const ctx = useContext(WalletContext);
