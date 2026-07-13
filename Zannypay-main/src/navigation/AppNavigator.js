@@ -41,6 +41,7 @@ import ProfileInfoScreen from '../screens/ProfileInfoScreen';
 import DataScreen from '../screens/DataScreen';
 import TransferMoneyScreen from '../screens/TransferMoneyScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
+import TransactionReceiptScreen from '../screens/TransactionReceiptScreen';
 // ==========================================
 // END TEMPORARY DEV IMPORTS
 // ==========================================
@@ -112,6 +113,7 @@ function MainStack() {
       <Stack.Screen name="Data" component={DataScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="TransferMoney" component={TransferMoneyScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="TransactionReceipt" component={TransactionReceiptScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
       {/* ========================================== */}
       {/* END TEMPORARY DEV ROUTES                   */}
       {/* ========================================== */}
