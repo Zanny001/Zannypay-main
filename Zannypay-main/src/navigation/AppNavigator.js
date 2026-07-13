@@ -31,7 +31,19 @@ import LoanScreen from '../screens/LoanScreen';
 import BeneficiariesScreen from '../screens/BeneficiariesScreen';
 import QRPayScreen from '../screens/QRPayScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
-import AirtimeScreen from '../screens/AirtimeScreen'; // <-- NEW IMPORT
+import AirtimeScreen from '../screens/AirtimeScreen';
+
+// ==========================================
+// START TEMPORARY DEV IMPORTS (DELETE LATER)
+// ==========================================
+import ProfileInfoFormScreen from '../screens/ProfileInfoFormScreen';
+import ProfileInfoScreen from '../screens/ProfileInfoScreen';
+import DataScreen from '../screens/DataScreen';
+import TransferMoneyScreen from '../screens/TransferMoneyScreen';
+import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
+// ==========================================
+// END TEMPORARY DEV IMPORTS
+// ==========================================
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -90,8 +102,19 @@ function MainStack() {
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} options={{ presentation: 'transparentModal', animation: 'fade_from_bottom' }} />
       <Stack.Screen name="Support" component={SupportScreen} options={{ presentation: 'card', headerShown: true, title: 'Help & Support', headerTintColor: colors.dark.text, headerStyle: { backgroundColor: colors.dark.background } }} />
-      {/* <-- NEW AIRTIME SCREEN --> */}
       <Stack.Screen name="Airtime" component={AirtimeScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+
+      {/* ========================================== */}
+      {/* START TEMPORARY DEV ROUTES (DELETE LATER)  */}
+      {/* ========================================== */}
+      <Stack.Screen name="ProfileInfoForm" component={ProfileInfoFormScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="ProfileInfo" component={ProfileInfoScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="Data" component={DataScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="TransferMoney" component={TransferMoneyScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="TransactionHistory" component={TransactionHistoryScreen} options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      {/* ========================================== */}
+      {/* END TEMPORARY DEV ROUTES                   */}
+      {/* ========================================== */}
     </Stack.Navigator>
   );
 }

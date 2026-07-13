@@ -31,7 +31,9 @@ const MORE_ACTIONS = [
   { key: 'DeveloperConsole', icon: 'code-slash-outline', label: 'Dev Console' },
 ];
 
-// TEMPORARY DEV SCREENS SEGMENT - Safe to delete later
+// ==========================================
+// START TEMPORARY DEV SCREENS (DELETE LATER)
+// ==========================================
 const DEV_TEST_SCREENS = [
   { key: 'ProfileInfoForm', label: 'Profile Form' },
   { key: 'ProfileInfo', label: 'Profile Info' },
@@ -40,6 +42,9 @@ const DEV_TEST_SCREENS = [
   { key: 'TransactionHistory', label: 'Tx History' },
   { key: 'TransactionDetail', label: 'Tx Detail' },
 ];
+// ==========================================
+// END TEMPORARY DEV SCREENS
+// ==========================================
 
 export default function DashboardScreen({ navigation }) {
   const theme = colors.dark;
@@ -148,9 +153,11 @@ export default function DashboardScreen({ navigation }) {
           </View>
         )}
 
-        {/* --- START TEMPORARY DEV SEGMENT --- */}
+        {/* ========================================== */}
+        {/* START TEMPORARY DEV SEGMENT (DELETE LATER) */}
+        {/* ========================================== */}
         <View style={styles.devSegmentContainer}>
-          <Text style={styles.devSegmentTitle}>🛠 Dev Test Segment (Can delete later)</Text>
+          <Text style={styles.devSegmentTitle}>🛠 Dev Test Segment</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.devScroll}>
             {DEV_TEST_SCREENS.map((screen) => (
               <TouchableOpacity 
@@ -164,7 +171,9 @@ export default function DashboardScreen({ navigation }) {
             ))}
           </ScrollView>
         </View>
-        {/* --- END TEMPORARY DEV SEGMENT --- */}
+        {/* ========================================== */}
+        {/* END TEMPORARY DEV SEGMENT                  */}
+        {/* ========================================== */}
 
         {/* RECENT ACTIVITY */}
         <View style={styles.sectionHeader}>
