@@ -31,6 +31,16 @@ const MORE_ACTIONS = [
   { key: 'DeveloperConsole', icon: 'code-slash-outline', label: 'Dev Console' },
 ];
 
+// TEMPORARY DEV SCREENS SEGMENT - Safe to delete later
+const DEV_TEST_SCREENS = [
+  { key: 'ProfileInfoForm', label: 'Profile Form' },
+  { key: 'ProfileInfo', label: 'Profile Info' },
+  { key: 'Data', label: 'Buy Data' },
+  { key: 'TransferMoney', label: 'Transfer Money' },
+  { key: 'TransactionHistory', label: 'Tx History' },
+  { key: 'TransactionDetail', label: 'Tx Detail' },
+];
+
 export default function DashboardScreen({ navigation }) {
   const theme = colors.dark;
   const { user, balance, transactions, syncWallet, isBalanceHidden, toggleBalanceHidden } = useWallet();
@@ -138,6 +148,24 @@ export default function DashboardScreen({ navigation }) {
           </View>
         )}
 
+        {/* --- START TEMPORARY DEV SEGMENT --- */}
+        <View style={styles.devSegmentContainer}>
+          <Text style={styles.devSegmentTitle}>🛠 Dev Test Segment (Can delete later)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.devScroll}>
+            {DEV_TEST_SCREENS.map((screen) => (
+              <TouchableOpacity 
+                key={screen.key} 
+                style={[styles.devCard, { backgroundColor: theme.surface }]}
+                onPress={() => navigation.navigate(screen.key)}
+              >
+                <Ionicons name="flask" size={16} color="#6C5CE7" />
+                <Text style={[styles.devCardText, { color: theme.text }]}>{screen.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+        {/* --- END TEMPORARY DEV SEGMENT --- */}
+
         {/* RECENT ACTIVITY */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Activity</Text>
@@ -225,6 +253,14 @@ const styles = StyleSheet.create({
   gridItem: { width: '25%', alignItems: 'center', marginBottom: 20 },
   gridIconWrap: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   gridLabel: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
+  
+  // Dev Segment Styles
+  devSegmentContainer: { marginBottom: 25 },
+  devSegmentTitle: { fontSize: 12, fontWeight: 'bold', color: '#FF4757', marginLeft: 20, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  devScroll: { paddingHorizontal: 20, gap: 12, paddingRight: 40 },
+  devCard: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, gap: 8, borderWidth: 1, borderColor: '#333' },
+  devCardText: { fontSize: 13, fontWeight: '600' },
+  
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
   seeAll: { fontSize: 13, fontWeight: '600' },
