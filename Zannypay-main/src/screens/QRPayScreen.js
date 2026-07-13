@@ -1,35 +1,27 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, TextInput, Share, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
 import { colors } from '../theme/colors';
 import { useWallet } from '../context/WalletContext';
 import { maskAccount } from '../utils/format';
 import GradientButton from '../components/GradientButton';
 import FadeInView from '../components/FadeInView';
 
-// Deterministically derives a pixel pattern from the account number so the
-// same account always renders the same "code" — a lightweight, dependency
-// -free stand-in for a real QR graphic that keeps the whole stack on the
-// exact package versions already pinned for Snack compatibility.
-function useCodePattern(seedString, size = 7) {
-  return useMemo(() => {
-    const seed = String(seedString || '0000000000');
-    const cells = [];
-    for (let i = 0; i < size * size; i++) {
-      const charCode = seed.charCodeAt(i % seed.length) || 48;
-      cells.push(((charCode * (i + 7)) % 5) === 0);
-    }
-    return cells;
-  }, [seedString, size]);
-}
-
 export default function QRPayScreen({ navigation }) {
   const { user } = useWallet();
   const accountNumber = user?.accountNumber || user?.phone || '0000000000';
-  const pattern = useCodePattern(accountNumber);
-
+  
   const [requestAmount, setRequestAmount] = useState('');
   const pulse = useRef(new Animated.Value(0)).current;
+
+  // The actual payload another app/phone will see when they scan it
+  const qrPayload = JSON.stringify({
+    app: 'Zannypay',
+    account: accountNumber,
+    name: user?.name || 'Zannypay Member',
+    amount: requestAmount ? parseFloat(requestAmount) : null
+  });
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -46,13 +38,13 @@ export default function QRPayScreen({ navigation }) {
   const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.5] });
 
   const handleShare = async () => {
-    const amountLine = requestAmount ? `\nRequested Amount: ₦${requestAmount}` : '';
     try {
+      const amountLine = requestAmount ? `\nRequested Amount: ₦${requestAmount}` : '';
       await Share.share({
-        message: `Pay me instantly on Zannypay 💜\n\nName: ${user?.name || 'Zannypay User'}\nAccount: ${accountNumber}${amountLine}\n\nOpen Zannypay and send to this account number.`,
+        message: `Pay ${user?.name || 'Zannypay User'}\nAccount: ${accountNumber}${amountLine}\n\nOpen Zannypay and send to this account number.`,
       });
     } catch (e) {
-      // Share sheet dismissed — nothing to do
+      // Share sheet dismissed
     }
   };
 
@@ -69,16 +61,18 @@ export default function QRPayScreen({ navigation }) {
       <FadeInView style={styles.scroll}>
         <View style={styles.codeWrap}>
           <Animated.View style={[styles.glow, { transform: [{ scale: glowScale }], opacity: glowOpacity }]} />
+          
+          {/* REAL QR CODE COMPONENT */}
           <View style={styles.codeCard}>
-            <View style={styles.grid}>
-              {pattern.map((filled, i) => (
-                <View key={i} style={styles.cell}>
-                  <View style={[styles.cellInner, filled && styles.cellInnerFilled]} />
-                </View>
-              ))}
-            </View>
-            <Text style={styles.codeCaption}>Show this to receive money instantly</Text>
+            <QRCode
+              value={qrPayload}
+              size={180}
+              color={colors.textDark}
+              backgroundColor="white"
+            />
+            <Text style={styles.codeCaption}>Scan to pay instantly</Text>
           </View>
+          
         </View>
 
         <View style={styles.identityBlock}>
@@ -112,11 +106,7 @@ const styles = StyleSheet.create({
   codeWrap: { alignItems: 'center', justifyContent: 'center', marginTop: 10, marginBottom: 24 },
   glow: { position: 'absolute', width: 240, height: 240, borderRadius: 28, backgroundColor: colors.primary },
   codeCard: { backgroundColor: '#fff', borderRadius: 24, padding: 20, alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-  grid: { width: 168, height: 168, flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: `${100 / 7}%`, height: `${100 / 7}%`, padding: 2 },
-  cellInner: { flex: 1, borderRadius: 3, backgroundColor: 'transparent' },
-  cellInnerFilled: { backgroundColor: colors.textDark },
-  codeCaption: { fontSize: 12, color: colors.textMuted, marginTop: 14, textAlign: 'center' },
+  codeCaption: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginTop: 16, textAlign: 'center' },
   identityBlock: { alignItems: 'center', marginBottom: 20 },
   name: { fontSize: 18, fontWeight: '800', color: colors.textDark },
   account: { fontSize: 13, color: colors.textMuted, marginTop: 4 },

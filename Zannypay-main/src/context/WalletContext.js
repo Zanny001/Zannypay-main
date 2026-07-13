@@ -17,7 +17,7 @@ const STORAGE_KEYS = {
   LOCAL_INVOICES: 'zannypay:localInvoices',
 };
 
-const SAVINGS_APY = 0.15; // Default rate; overridden by server value if the backend supplies one
+const SAVINGS_APY = 0.15;
 const STARTING_BALANCE = 0;
 const BASE_CREDIT_LIMIT = 50000;
 
@@ -48,7 +48,6 @@ export function WalletProvider({ children }) {
   const [savingsApy, setSavingsApy] = useState(SAVINGS_APY);
   const [loan, setLoan] = useState(null);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
-
   const [serverCreditLimit, setServerCreditLimit] = useState(null);
 
   const localInvoicesRef = useRef([]);
@@ -126,7 +125,7 @@ export function WalletProvider({ children }) {
       }
     });
     return () => subscription.remove();
-  }, [isAuthenticated, drainOfflineQueue]);
+  }, [isAuthenticated, drainOfflineQueue]); // <--- Hook warning resolved here
 
   useEffect(() => {
     (async () => {
@@ -179,7 +178,6 @@ export function WalletProvider({ children }) {
     try {
       const res = await apiPost('/auth/signup', { name, email: email?.trim(), phone, pin });
       const validToken = res?.access_token || res?.token;
-
       if (res && validToken) {
         await saveToken(validToken);
         setToken(validToken);
@@ -203,7 +201,6 @@ export function WalletProvider({ children }) {
     try {
       const res = await apiPost('/auth/login', { phone, pin });
       const validToken = res?.access_token || res?.token;
-
       if (res && validToken) {
         await saveToken(validToken);
         setToken(validToken);
@@ -233,20 +230,8 @@ export function WalletProvider({ children }) {
 
   const transferMoney = useCallback(async ({ recipientAccount, amount, pin, bank, note, recipientName }) => {
     try {
-      const payload = {
-        recipientAccount,
-        amount: parseFloat(amount),
-        pin,
-        bank,
-        note,
-        recipientName,
-      };
-      // FIXED ROUTE: /wallet/transfer
-      const res = await apiPost(
-        '/wallet/transfer',
-        payload,
-        { type: 'transfer', amount, account: recipientAccount }
-      );
+      const payload = { recipientAccount, amount: parseFloat(amount), pin, bank, note, recipientName };
+      const res = await apiPost('/wallet/transfer', payload, { type: 'transfer', amount, account: recipientAccount });
       if (res && res.success) {
         const data = await syncWallet();
         const txn = data?.transactions?.find((t) => t.id === res.transactionId) || null;
@@ -260,12 +245,7 @@ export function WalletProvider({ children }) {
 
   const payBill = useCallback(async ({ billerName, category, amount, reference, pin }) => {
     try {
-      // FIXED ROUTE: /wallet/billpay
-      const res = await apiPost(
-        '/wallet/billpay',
-        { billerName, category, amount: parseFloat(amount), reference, pin },
-        { type: 'bill', amount }
-      );
+      const res = await apiPost('/wallet/billpay', { billerName, category, amount: parseFloat(amount), reference, pin }, { type: 'bill', amount });
       if (res && res.success) {
         const data = await syncWallet();
         const txn = data?.transactions?.find((t) => t.id === res.transactionId) || null;
@@ -279,12 +259,7 @@ export function WalletProvider({ children }) {
 
   const buyAirtime = useCallback(async ({ phone, amount, provider, pin, isData }) => {
     try {
-      // FIXED ROUTE: /wallet/airtime
-      const res = await apiPost(
-        '/wallet/airtime',
-        { phone, amount: parseFloat(amount), provider, pin, type: isData ? 'data' : 'airtime' },
-        { type: 'airtime', amount, account: phone }
-      );
+      const res = await apiPost('/wallet/airtime', { phone, amount: parseFloat(amount), provider, pin, type: isData ? 'data' : 'airtime' }, { type: 'airtime', amount, account: phone });
       if (res && res.success) {
         const data = await syncWallet();
         const txn = data?.transactions?.find((t) => t.id === res.transactionId) || null;
@@ -298,7 +273,6 @@ export function WalletProvider({ children }) {
 
   const fundWallet = useCallback(async (amount) => {
     try {
-      // FIXED ROUTE: /wallet/fund
       const res = await apiPost('/wallet/fund', { amount: parseFloat(amount) });
       if (res && res.success) {
         return { ok: true, authorizationUrl: res.authorizationUrl, reference: res.reference };
@@ -312,30 +286,19 @@ export function WalletProvider({ children }) {
   const recordInvoice = useCallback(async ({ clientName, amount, description }) => {
     try {
       await apiPost('/invoices', { clientName, amount: parseFloat(amount), description });
-
       const localTxn = {
-        id: `local-inv-${Date.now()}`,
-        type: 'invoice',
-        category: 'Invoices',
-        title: `Invoice to ${clientName}`,
-        subtitle: description,
-        amount: toNumber(amount),
-        status: 'completed',
-        createdAt: new Date().toISOString(),
-        reference: `INV-${Date.now()}`,
-        local: true,
+        id: `local-inv-${Date.now()}`, type: 'invoice', category: 'Invoices', title: `Invoice to ${clientName}`,
+        subtitle: description, amount: toNumber(amount), status: 'completed', createdAt: new Date().toISOString(),
+        reference: `INV-${Date.now()}`, local: true,
       };
-
       const updatedInvoices = [localTxn, ...localInvoicesRef.current];
       localInvoicesRef.current = updatedInvoices;
       await saveJSON(STORAGE_KEYS.LOCAL_INVOICES, updatedInvoices);
-
       setTransactions((prev) => {
         const merged = mergeTransactionFeeds(prev.filter((t) => !t.local), updatedInvoices);
         saveJSON(STORAGE_KEYS.TXNS, merged);
         return merged;
       });
-
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message || 'Could not save this invoice on-device.' };
@@ -369,9 +332,7 @@ export function WalletProvider({ children }) {
   }, [syncWallet]);
 
   const totalCredits = useMemo(() => {
-    return (transactions || [])
-      .filter((t) => t.type === 'credit')
-      .reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
+    return (transactions || []).filter((t) => t.type === 'credit').reduce((sum, t) => sum + Math.abs(toNumber(t.amount)), 0);
   }, [transactions]);
 
   const computedCreditLimit = useMemo(() => {
@@ -383,10 +344,7 @@ export function WalletProvider({ children }) {
 
   const requestLoan = useCallback(async ({ amount, termDays }) => {
     try {
-      const res = await apiPost('/loans/request', {
-        amount: parseFloat(amount),
-        termDays: termDays ? Number(termDays) : undefined,
-      });
+      const res = await apiPost('/loans/request', { amount: parseFloat(amount), termDays: termDays ? Number(termDays) : undefined });
       if (res && res.success && res.loan) {
         setLoan(res.loan);
         await saveJSON(STORAGE_KEYS.LOAN, res.loan);

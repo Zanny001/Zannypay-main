@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Modal, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { useWallet } from '../context/WalletContext';
 import { formatCurrency } from '../utils/format';
@@ -17,6 +17,8 @@ export default function AirtimeScreen({ navigation }) {
   const [provider, setProvider] = useState(PROVIDERS[0]);
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
+  
+  // PIN Modal State
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,8 +28,8 @@ export default function AirtimeScreen({ navigation }) {
       Alert.alert('Details Required', 'Please enter a phone number and select an amount.');
       return;
     }
-    setPin('');
-    setPinModalVisible(true);
+    setPin(''); // Reset PIN on new attempt
+    setPinModalVisible(true); // Trigger the PIN input modal
   };
 
   const handleConfirmPurchase = async () => {
@@ -35,6 +37,7 @@ export default function AirtimeScreen({ navigation }) {
       Alert.alert('Invalid PIN', 'Please enter your 4-digit transaction PIN.');
       return;
     }
+    
     setLoading(true);
     const res = await buyAirtime({
       phone,
@@ -43,14 +46,16 @@ export default function AirtimeScreen({ navigation }) {
       pin,
       isData: activeTab === 'Data Bundle',
     });
+    
     setLoading(false);
-    setPinModalVisible(false);
-    setPin('');
-
+    
     if (!res.ok) {
+      setPinModalVisible(false);
       Alert.alert('Purchase failed', res.error);
       return;
     }
+    
+    setPinModalVisible(false);
     Alert.alert('Success', `${formatCurrency(amount)} ${activeTab} purchased for ${phone}.`, [
       { text: 'Done', onPress: () => navigation.goBack() },
     ]);
@@ -143,7 +148,7 @@ export default function AirtimeScreen({ navigation }) {
 
       {/* PIN Confirmation Modal */}
       <Modal visible={pinModalVisible} transparent animationType="fade" onRequestClose={() => setPinModalVisible(false)}>
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={styles.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
@@ -152,8 +157,9 @@ export default function AirtimeScreen({ navigation }) {
             <Text style={[styles.modalSubtitle, { color: theme.textMuted }]}>
               Buy {formatCurrency(amount)} {activeTab} for {phone} ({provider})?
             </Text>
+            
             <TextInput
-              style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text, textAlign: 'center', fontSize: 24, letterSpacing: 8 }]}
+              style={[styles.pinInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
               placeholder="••••"
               placeholderTextColor={theme.textMuted}
               keyboardType="numeric"
@@ -163,7 +169,9 @@ export default function AirtimeScreen({ navigation }) {
               onChangeText={setPin}
               autoFocus
             />
+            
             <GradientButton title="Confirm & Pay" onPress={handleConfirmPurchase} loading={loading} style={{ marginTop: 20 }} />
+            
             <TouchableOpacity style={{ marginTop: 16, alignItems: 'center' }} onPress={() => setPinModalVisible(false)}>
               <Text style={{ color: theme.textMuted, fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
@@ -198,4 +206,5 @@ const styles = StyleSheet.create({
   modalCard: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
   modalSubtitle: { fontSize: 13, textAlign: 'center', marginTop: 8, marginBottom: 20 },
+  pinInput: { borderRadius: 12, borderWidth: 1, textAlign: 'center', fontSize: 24, letterSpacing: 8, paddingVertical: 15 }
 });
